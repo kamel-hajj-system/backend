@@ -32,7 +32,35 @@ router.get('/db-health', async (req, res, next) => {
   }
 });
 
-router.get('/users/:id', async (req, res, next) => {
+router.get('/users', async (req, res, next) => {
+  try {
+    const result = await pool.query('SELECT id, username FROM users ORDER BY id ASC');
+    return res.json(result.rows);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/users', async (req, res, next) => {
+  const { username, password } = req.body || {};
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'username and password are required' });
+  }
+
+  try {
+    const insertQuery =
+      'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username';
+    const values = [username, password];
+
+    const result = await pool.query(insertQuery, values);
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.delete('/users/:id', async (req, res, next) => {
   const id = parseInt(req.params.id, 10);
 
   if (Number.isNaN(id)) {
@@ -40,16 +68,16 @@ router.get('/users/:id', async (req, res, next) => {
   }
 
   try {
-    const queryText = 'SELECT id, username FROM users WHERE id = $1';
+    const deleteQuery = 'DELETE FROM users WHERE id = $1';
     const values = [id];
 
-    const result = await pool.query(queryText, values);
+    const result = await pool.query(deleteQuery, values);
 
-    if (result.rows.length === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    return res.json(result.rows[0]);
+    return res.status(204).send();
   } catch (error) {
     return next(error);
   }
