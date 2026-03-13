@@ -109,7 +109,7 @@ Steps:
 ### Dokploy / Deployment Notes
 
 - Ensure that all required environment variables are configured in your Dokploy environment.
-- **Frontend path:** Set `FRONTEND_BUILD_PATH` to the path inside the container where the frontend build is (e.g. `/app/frontend/dist`). Build the frontend in your pipeline and copy the `dist` output to that path so the backend can serve it.
-- **Database:** Run the DB init once so the `users` table exists: in the backend container run `npm run db:init`, or run `database/init.sql` against your production database.
+- **Frontend path:** The backend looks for the built frontend at `<app root>/frontend/dist` (e.g. `/app/frontend/dist`). Build the frontend in your pipeline and copy the `dist` output there, or set `FRONTEND_BUILD_PATH` to a different path.
+- **Database:** The backend runs `database/init.sql` on every startup, so the `users` table is created automatically if missing. No manual step needed.
 - Expose the backend port (default `5000`) from your container.
 
