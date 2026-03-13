@@ -20,7 +20,10 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api', apiRouter);
 
-const frontendBuildPath = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
+// Default: repo root / frontend / dist (local). In production (e.g. Dokploy) set FRONTEND_BUILD_PATH to where the build is in the container (e.g. /app/frontend/dist).
+const frontendBuildPath =
+  process.env.FRONTEND_BUILD_PATH ||
+  path.resolve(__dirname, '..', '..', 'frontend', 'dist');
 
 app.use(express.static(frontendBuildPath));
 

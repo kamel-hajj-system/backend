@@ -23,6 +23,7 @@ You can use either a single connection string or individual parameters:
 - `PGDATABASE`
 - `DB_SSL` (set to `true` to enable SSL, anything else to disable)
 - `PORT` (optional, backend port, defaults to `5000`)
+- `FRONTEND_BUILD_PATH` (optional; in production set to the path where the frontend build is in the container, e.g. `/app/frontend/dist`)
 
 Example `.env` (do **not** commit this file):
 
@@ -108,6 +109,7 @@ Steps:
 ### Dokploy / Deployment Notes
 
 - Ensure that all required environment variables are configured in your Dokploy environment.
-- Build the frontend (`npm run build` in `frontend`) as part of your pipeline and make sure the resulting `dist` directory is available to the backend container/image at `frontend/dist`.
+- **Frontend path:** Set `FRONTEND_BUILD_PATH` to the path inside the container where the frontend build is (e.g. `/app/frontend/dist`). Build the frontend in your pipeline and copy the `dist` output to that path so the backend can serve it.
+- **Database:** Run the DB init once so the `users` table exists: in the backend container run `npm run db:init`, or run `database/init.sql` against your production database.
 - Expose the backend port (default `5000`) from your container.
 
