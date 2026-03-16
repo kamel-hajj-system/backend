@@ -1,0 +1,129 @@
+### User Module — REST Client tests
+###
+### 1) Start backend:  npm run dev   (listening on port 5001 — avoids macOS AirPlay on 5000)
+### 2) Run "Health check" then "Login"; copy "token" from response into @token below.
+
+@baseUrl = http://127.0.0.1:5001/api
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZWJjMWE2Ni1kNDZhLTQzMDYtOWJiZi0zZWQwYzVhYWMzZDUiLCJlbWFpbCI6InN1cGVyYWRtaW4iLCJyb2xlIjoiQWRtaW4iLCJpc1N1cGVyQWRtaW4iOnRydWUsImlhdCI6MTc3MzQ1Mjg4NywiZXhwIjoxNzc0MDU3Njg3fQ.xoCN6vkuCbBgln7PrktKkg1BrRyYe9KHTjGelZ6LKlE
+
+###############################################################################
+# Health (run this first to confirm server is reachable)
+###############################################################################
+
+### Health check — must succeed before Login
+GET {{baseUrl}}/health
+
+###############################################################################
+# Public
+###############################################################################
+
+### Login (run after health check — then copy "token" from response into @token above)
+### Replace the values below with your SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD from env (e.g. .env or Dokploy).
+# @name login
+POST {{baseUrl}}/users/login
+Content-Type: application/json
+
+{
+  "email": "YOUR_SUPER_ADMIN_EMAIL",
+  "password": "YOUR_SUPER_ADMIN_PASSWORD"
+}
+
+### Login — invalid credentials (expect 401)
+POST {{baseUrl}}/users/login
+Content-Type: application/json
+
+{
+  "email": "wrong@example.com",
+  "password": "wrong"
+}
+
+### Logout (optional: send token to log activity)
+POST {{baseUrl}}/users/logout
+Authorization: Bearer {{token}}
+
+###############################################################################
+# Protected — require valid token (use @token from login response)
+###############################################################################
+
+### Get users (list, paginated)
+GET {{baseUrl}}/users
+Authorization: Bearer {{token}}
+
+### Get users — with query params
+GET {{baseUrl}}/users?page=1&limit=5&role=Admin
+Authorization: Bearer {{token}}
+
+### Get user by ID (replace USER_ID with a real UUID from list)
+# @name getUser
+GET {{baseUrl}}/users/bebc1a66-d46a-4306-9bbf-3ed0c5aac3d5
+Authorization: Bearer {{token}}
+
+### Create user (Admin only)
+# @name createUser
+POST {{baseUrl}}/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fullName": "Test Employee",
+  "fullNameAr": "موظف تجريبي",
+  "email": "test-employee@example.com",
+  "password": "password123",
+  "userType": "Company",
+  "role": "Employee",
+  "shift": "Morning"
+}
+
+### Update user (replace USER_ID)
+PATCH {{baseUrl}}/users/USER_ID
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fullName": "Test Employee Updated",
+  "fullNameAr": "موظف تجريبي محدث",
+  "shift": "Evening"
+}
+
+### Change password (replace USER_ID)
+POST {{baseUrl}}/users/USER_ID/change-password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "currentPassword": "password123",
+  "newPassword": "newpassword456"
+}
+
+### Assign role (Admin only; replace USER_ID)
+POST {{baseUrl}}/users/USER_ID/assign-role
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "role": "Supervisor"
+}
+
+### Assign permissions (Admin only; replace USER_ID and permission UUIDs if you have any)
+POST {{baseUrl}}/users/USER_ID/assign-permissions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "permissionIds": []
+}
+
+### Soft delete user (Admin only; replace USER_ID — cannot delete super admin)
+DELETE {{baseUrl}}/users/USER_ID
+Authorization: Bearer {{token}}
+
+###############################################################################
+# Auth checks
+###############################################################################
+
+### Get users without token (expect 401)
+GET {{baseUrl}}/users
+
+### Get users with invalid token (expect 401)
+GET {{baseUrl}}/users
+Authorization: Bearer invalid-token

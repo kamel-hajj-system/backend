@@ -1,0 +1,5 @@
+-- init.sql for Kamel System
+-- Do NOT drop "users" here — the user module tables are managed by Prisma migrations only.
+-- Dropping users on every startup would remove the Prisma-created table; migrate deploy
+-- would then do nothing (migration already applied), so the table would stay missing.
+-- For legacy (old simple users table), run: npm run db:seed (which applies migrations).
