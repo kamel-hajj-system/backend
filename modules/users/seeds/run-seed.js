@@ -43,11 +43,6 @@ async function seedPermissions() {
   }
   console.log('Permissions seeded.');
 
-  const defaultCount = await prisma.defaultPermission.count();
-  if (defaultCount > 0) {
-    console.log('Default permissions already seeded.');
-    return;
-  }
   const perms = await prisma.permission.findMany({
     where: { name: { in: [...DEFAULT_PERMISSIONS_COMPANY, ...DEFAULT_PERMISSIONS_SERVICE_CENTER] } },
     select: { id: true, name: true },
@@ -55,6 +50,8 @@ async function seedPermissions() {
   const byName = Object.fromEntries(perms.map((p) => [p.name, p.id]));
   const companyIds = DEFAULT_PERMISSIONS_COMPANY.map((n) => byName[n]).filter(Boolean);
   const serviceCenterIds = DEFAULT_PERMISSIONS_SERVICE_CENTER.map((n) => byName[n]).filter(Boolean);
+  await prisma.defaultPermission.deleteMany({ where: { userType: 'Company' } });
+  await prisma.defaultPermission.deleteMany({ where: { userType: 'ServiceCenter' } });
   if (companyIds.length) {
     await prisma.defaultPermission.createMany({
       data: companyIds.map((permissionId) => ({ userType: 'Company', permissionId })),
@@ -65,7 +62,7 @@ async function seedPermissions() {
       data: serviceCenterIds.map((permissionId) => ({ userType: 'ServiceCenter', permissionId })),
     });
   }
-  console.log('Default permissions (Company & ServiceCenter) seeded.');
+  console.log('Default permissions (Company & ServiceCenter) synced — Portal only; Super Admin area is not included by default.');
 }
 
 async function seedShifts() {

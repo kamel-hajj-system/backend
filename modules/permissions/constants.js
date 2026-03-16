@@ -22,18 +22,14 @@ const Permissions = Object.freeze({
 /** All permission names as array. */
 const ALL_PERMISSION_NAMES = Object.values(Permissions);
 
-/** Default permissions for userType Company (employees). */
+/** Default permissions for userType Company. Only Portal access; Super Admin area (locations, shifts, users, permissions) is for the single Super Admin or explicitly assigned users. */
 const DEFAULT_PERMISSIONS_COMPANY = [
   Permissions.DASHBOARD_VIEW,
-  Permissions.LOCATIONS_VIEW,
-  Permissions.SHIFTS_VIEW,
 ];
 
-/** Default permissions for userType ServiceCenter. */
+/** Default permissions for userType ServiceCenter. Only Portal access; Super Admin area is not included by default. */
 const DEFAULT_PERMISSIONS_SERVICE_CENTER = [
   Permissions.DASHBOARD_VIEW,
-  Permissions.LOCATIONS_VIEW,
-  Permissions.SHIFTS_VIEW,
 ];
 
 /** Full permission definitions for seeding (name, module, description). */
