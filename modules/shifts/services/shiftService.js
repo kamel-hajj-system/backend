@@ -32,6 +32,7 @@ async function createShift(data) {
   return prisma.shift.create({
     data: {
       name: data.name.trim(),
+      shiftAr: data.shiftAr ? data.shiftAr.trim() : null,
       startTime,
       endTime,
       isForEmployee: data.isForEmployee !== false,
@@ -45,6 +46,9 @@ async function createShift(data) {
 async function updateShift(id, data) {
   const updatePayload = {};
   if (data.name !== undefined) updatePayload.name = data.name.trim();
+  if (data.shiftAr !== undefined) {
+    updatePayload.shiftAr = data.shiftAr === null ? null : data.shiftAr.trim();
+  }
   if (data.startTime !== undefined) updatePayload.startTime = parseTime(data.startTime);
   if (data.endTime !== undefined) updatePayload.endTime = parseTime(data.endTime);
   if (data.isForEmployee !== undefined) updatePayload.isForEmployee = data.isForEmployee;

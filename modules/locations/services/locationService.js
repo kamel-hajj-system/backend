@@ -30,6 +30,7 @@ async function createLocation(data) {
   return prisma.location.create({
     data: {
       name: data.name.trim(),
+      locationAr: data.locationAr ? data.locationAr.trim() : null,
       isActive: data.isActive !== false,
     },
   });
@@ -41,6 +42,10 @@ async function createLocation(data) {
 async function updateLocation(id, data) {
   const updatePayload = {};
   if (data.name !== undefined) updatePayload.name = data.name.trim();
+  if (data.locationAr !== undefined) {
+    updatePayload.locationAr =
+      data.locationAr === null ? null : data.locationAr.trim();
+  }
   if (data.isActive !== undefined) updatePayload.isActive = data.isActive;
 
   return prisma.location.update({

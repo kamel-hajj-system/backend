@@ -16,6 +16,7 @@ const idParam = [param('id').isUUID().withMessage('Invalid shift ID')];
 
 const createShift = [
   body('name').trim().notEmpty().withMessage('name is required'),
+  body('shiftAr').optional().trim().notEmpty().withMessage('shiftAr cannot be empty'),
   body('startTime').notEmpty().withMessage('startTime is required'),
   body('endTime').notEmpty().withMessage('endTime is required'),
   body('isForEmployee').optional().isBoolean().withMessage('isForEmployee must be boolean'),
@@ -24,6 +25,7 @@ const createShift = [
 const updateShift = [
   param('id').isUUID().withMessage('Invalid shift ID'),
   body('name').optional().trim().notEmpty().withMessage('name cannot be empty'),
+  body('shiftAr').optional().trim().notEmpty().withMessage('shiftAr cannot be empty'),
   body('startTime').optional(),
   body('endTime').optional(),
   body('isForEmployee').optional().isBoolean().withMessage('isForEmployee must be boolean'),
