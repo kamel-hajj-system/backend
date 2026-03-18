@@ -110,6 +110,25 @@ async function ensureDatabase() {
   // Ensure Prisma schema is applied (dev: use db push, no migrations)
   try {
     const { execSync } = require('child_process');
+    // In production, do NOT auto-apply schema changes unless explicitly allowed.
+    // This prevents accidental destructive schema changes on boot.
+    if (process.env.NODE_ENV === 'production') {
+      const allowPush = process.env.PRISMA_DB_PUSH_ON_START === 'true';
+      const acceptDataLoss = process.env.PRISMA_DB_PUSH_ACCEPT_DATA_LOSS === 'true';
+      if (!allowPush) {
+        console.log('Skipping Prisma db push on startup (production).');
+        return;
+      }
+      const cmd = `npx prisma db push${acceptDataLoss ? ' --accept-data-loss' : ''}`;
+      execSync(cmd, {
+        stdio: 'inherit',
+        cwd: path.resolve(__dirname, '..'),
+        env: process.env,
+      });
+      console.log('Prisma db push OK.');
+      return;
+    }
+
     execSync('npx prisma db push', {
       stdio: 'inherit',
       cwd: path.resolve(__dirname, '..'),
