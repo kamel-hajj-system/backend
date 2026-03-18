@@ -4,8 +4,18 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { Pool } = require('pg');
+const cookieParser = require('cookie-parser');
 
 dotenv.config();
+
+// Security: require a strong JWT secret in production.
+if (process.env.NODE_ENV === 'production') {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret === 'change-me-in-production' || String(secret).length < 32) {
+    console.error('Startup failed: JWT_SECRET must be set to a strong value in production.');
+    process.exit(1);
+  }
+}
 
 // Prisma expects DATABASE_URL; build from PG* vars if not set (no change to existing config).
 if (!process.env.DATABASE_URL && process.env.PGHOST) {
@@ -24,8 +34,29 @@ const app = express();
 
 const PORT = process.env.PORT || 5001;
 
-app.use(cors());
+// Security: behind reverse proxies (Nginx/Cloudflare) set TRUST_PROXY=1
+if (process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
+// Security: restrict CORS in production by allowlist
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (corsOrigins.length === 0) return cb(null, true);
+      if (corsOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error('CORS blocked'), false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
+app.use(cookieParser());
 
 app.get('/api/health', (req, res) => {
   res.json({ message: 'Backend is running' });
@@ -76,17 +107,17 @@ async function ensureDatabase() {
   } finally {
     await pool.end();
   }
-  // Apply Prisma migrations (user module tables)
+  // Ensure Prisma schema is applied (dev: use db push, no migrations)
   try {
     const { execSync } = require('child_process');
-    execSync('npx prisma migrate deploy', {
+    execSync('npx prisma db push', {
       stdio: 'inherit',
       cwd: path.resolve(__dirname, '..'),
       env: process.env,
     });
-    console.log('Prisma migrations OK.');
+    console.log('Prisma db push OK.');
   } catch (err) {
-    console.error('Prisma migrate deploy failed:', err.message);
+    console.error('Prisma db push failed:', err.message);
     throw err;
   }
 }

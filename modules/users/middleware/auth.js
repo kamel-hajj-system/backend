@@ -1,9 +1,6 @@
 const authService = require('../services/authService');
 const { prisma } = require('../models');
 
-/**
- * Require valid JWT. Attach req.user (sanitized) and req.userId.
- */
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith('Bearer ')
@@ -40,26 +37,13 @@ function requireAuth(req, res, next) {
         isActive: true,
         isDeleted: true,
         isSuperAdmin: true,
+        isHr: true,
         createdAt: true,
         updatedAt: true,
-        userPermissions: {
-          select: {
-            permission: { select: { id: true, name: true, module: true } },
-          },
-        },
-        userGroups: {
-          select: {
-            group: {
-              select: {
-                permissions: {
-                  select: {
-                    permission: { select: { id: true, name: true, module: true } },
-                  },
-                },
-              },
-            },
-          },
-        },
+        shiftLocation: { select: { id: true, name: true, locationAr: true } },
+        shift: { select: { id: true, name: true, shiftAr: true } },
+        accessGrants: { select: { code: true } },
+        tokenVersion: true,
       },
     })
     .then((user) => {
@@ -69,17 +53,14 @@ function requireAuth(req, res, next) {
       if (!user.isActive) {
         return res.status(403).json({ error: 'Account is deactivated' });
       }
-      const direct = (user.userPermissions || []).map((up) => up.permission?.name).filter(Boolean);
-      const fromGroups = (user.userGroups || []).flatMap((ug) =>
-        (ug.group?.permissions || []).map((gp) => gp.permission?.name).filter(Boolean)
-      );
-      const permissionNames = [...new Set([...direct, ...fromGroups])];
+      if ((decoded.tv ?? 0) !== (user.tokenVersion ?? 0)) {
+        return res.status(401).json({ error: 'Session expired. Please login again.' });
+      }
       req.user = user;
+      req.user.accessCodes = (user.accessGrants || []).map((g) => g.code).filter(Boolean);
       req.userId = user.id;
       req.userRole = user.role;
       req.isSuperAdmin = user.isSuperAdmin === true;
-      req.permissionNames = permissionNames;
-      req.user.permissionNames = permissionNames;
       next();
     })
     .catch((err) => {
@@ -87,19 +68,6 @@ function requireAuth(req, res, next) {
     });
 }
 
-/**
- * Require Admin role (or super admin).
- */
-function requireAdmin(req, res, next) {
-  if (req.isSuperAdmin || req.userRole === 'Admin') {
-    return next();
-  }
-  return res.status(403).json({ error: 'Admin access required' });
-}
-
-/**
- * Require Super Admin (management of locations, shifts, etc.).
- */
 function requireSuperAdmin(req, res, next) {
   if (req.isSuperAdmin) {
     return next();
@@ -107,58 +75,33 @@ function requireSuperAdmin(req, res, next) {
   return res.status(403).json({ error: 'Super Admin access required' });
 }
 
-/**
- * Require at least one of the given permissions (or Super Admin).
- * Use after requireAuth. Backend source of truth for access control.
- * @param {string|string[]} permissionOrList - Single permission name or array (any one required).
- */
-function requirePermission(permissionOrList) {
-  const list = Array.isArray(permissionOrList)
-    ? permissionOrList
-    : [permissionOrList];
-  return (req, res, next) => {
-    if (req.isSuperAdmin) {
-      return next();
-    }
-    const names = req.permissionNames || [];
-    const hasAny = list.some((p) => names.includes(p));
-    if (hasAny) {
-      return next();
-    }
-    return res.status(403).json({
-      error: 'Insufficient permissions',
-      code: 'FORBIDDEN_PERMISSION',
-    });
-  };
+function requireHr(req, res, next) {
+  if (req.user?.isHr) {
+    return next();
+  }
+  return res.status(403).json({ error: 'HR access required' });
 }
 
-/**
- * Allow if req.userId === req.params.id (self) OR has one of the permissions.
- * Use for GET /users/:id so user can load own profile.
- * @param {string|string[]} permissionOrList - Permission(s); any one required when not self.
- */
-function allowSelfOrPermission(permissionOrList) {
-  const list = Array.isArray(permissionOrList)
-    ? permissionOrList
-    : [permissionOrList];
-  return (req, res, next) => {
-    if (req.isSuperAdmin) return next();
-    if (req.userId && req.params.id && req.userId === req.params.id) {
-      return next();
-    }
-    const names = req.permissionNames || [];
-    const hasAny = list.some((p) => names.includes(p));
-    if (hasAny) return next();
-    return res.status(403).json({
-      error: 'Insufficient permissions',
-      code: 'FORBIDDEN_PERMISSION',
-    });
-  };
+function requireHrCanEdit(req, res, next) {
+  if (!req.user?.isHr) {
+    return res.status(403).json({ error: 'HR access required' });
+  }
+  if (req.user.role === 'Supervisor' || req.user.role === 'EmpManage') {
+    return next();
+  }
+  return res.status(403).json({ error: 'HR edit access required' });
 }
 
-/**
- * Optional auth: attach user if token present, otherwise continue without req.user.
- */
+function requireCompanySupervisor(req, res, next) {
+  if (req.user?.userType !== 'Company') {
+    return res.status(403).json({ error: 'Company access required' });
+  }
+  if (req.user?.role !== 'Supervisor') {
+    return res.status(403).json({ error: 'Supervisor access required' });
+  }
+  return next();
+}
+
 function optionalAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith('Bearer ')
@@ -204,9 +147,9 @@ function optionalAuth(req, res, next) {
 
 module.exports = {
   requireAuth,
-  requireAdmin,
   requireSuperAdmin,
-  requirePermission,
-  allowSelfOrPermission,
+  requireHr,
+  requireHrCanEdit,
+  requireCompanySupervisor,
   optionalAuth,
 };

@@ -36,7 +36,16 @@ const createUser = [
   body('jobTitle').optional().trim(),
   body('shiftId').optional().isUUID().withMessage('shiftId must be a valid UUID'),
   body('locationId').optional().isUUID().withMessage('locationId must be a valid UUID'),
-  body('supervisorId').optional().isUUID().withMessage('supervisorId must be a valid UUID'),
+  body('supervisorId')
+    .optional()
+    .custom((value) => {
+      if (value === undefined || value === null || value === '') return true;
+      const uuidRegex = /^[0-9a-fA-F-]{36}$/;
+      if (!uuidRegex.test(String(value))) {
+        throw new Error('supervisorId must be a valid UUID');
+      }
+      return true;
+    }),
   body('serviceCenterId')
     .optional()
     .isUUID()
@@ -52,7 +61,16 @@ const registerEmployee = [
   body('phone').optional().trim(),
   body('locationId').isUUID().withMessage('locationId is required and must be a valid UUID'),
   body('shiftId').isUUID().withMessage('shiftId is required and must be a valid UUID'),
-  body('supervisorId').optional().isUUID().withMessage('supervisorId must be a valid UUID'),
+  body('supervisorId')
+    .optional()
+    .custom((value) => {
+      if (value === undefined || value === null || value === '') return true;
+      const uuidRegex = /^[0-9a-fA-F-]{36}$/;
+      if (!uuidRegex.test(String(value))) {
+        throw new Error('supervisorId must be a valid UUID');
+      }
+      return true;
+    }),
 ];
 
 const registerServiceCenter = [
@@ -81,7 +99,16 @@ const updateUser = [
   body('jobTitle').optional().trim(),
   body('shiftId').optional().isUUID().withMessage('shiftId must be a valid UUID'),
   body('locationId').optional().isUUID().withMessage('locationId must be a valid UUID'),
-  body('supervisorId').optional().isUUID().withMessage('supervisorId must be a valid UUID'),
+  body('supervisorId')
+    .optional()
+    .custom((value) => {
+      if (value === undefined || value === null || value === '') return true;
+      const uuidRegex = /^[0-9a-fA-F-]{36}$/;
+      if (!uuidRegex.test(String(value))) {
+        throw new Error('supervisorId must be a valid UUID');
+      }
+      return true;
+    }),
   body('serviceCenterId')
     .optional()
     .isUUID()
@@ -101,19 +128,11 @@ const changePassword = [
     .withMessage('newPassword must be at least 6 characters'),
 ];
 
-const assignRole = [
+const resetPassword = [
   param('id').isUUID().withMessage('Invalid user ID'),
-  body('role')
-    .isIn(roleValues)
-    .withMessage(`role must be one of: ${roleValues.join(', ')}`),
-];
-
-const assignPermissions = [
-  param('id').isUUID().withMessage('Invalid user ID'),
-  body('permissionIds')
-    .isArray()
-    .withMessage('permissionIds must be an array'),
-  body('permissionIds.*').isUUID().withMessage('Each permissionId must be a valid UUID'),
+  body('newPassword')
+    .isLength({ min: 6 })
+    .withMessage('newPassword must be at least 6 characters'),
 ];
 
 const login = [
@@ -126,7 +145,43 @@ const getUsersQuery = [
   query('limit').optional().isInt({ min: 1, max: 500 }).toInt(),
   query('isActive').optional().isBoolean().toBoolean(),
   query('role').optional().isIn(roleValues),
+  query('userType').optional().isIn(userTypeValues),
+  query('q').optional().isString().trim().isLength({ max: 100 }),
   query('locationId').optional().isUUID().withMessage('locationId must be a valid UUID'),
+];
+
+const bulkAssignSupervisor = [
+  body('userIds').isArray({ min: 1 }).withMessage('userIds must be an array'),
+  body('userIds.*').isUUID().withMessage('Each userId must be a valid UUID'),
+  body('supervisorId')
+    .optional()
+    .custom((value) => {
+      if (value === undefined || value === null || value === '') return true;
+      const uuidRegex = /^[0-9a-fA-F-]{36}$/;
+      if (!uuidRegex.test(String(value))) {
+        throw new Error('supervisorId must be a valid UUID');
+      }
+      return true;
+    }),
+  body('role').optional().isIn(roleValues).withMessage(`role must be one of: ${roleValues.join(', ')}`),
+];
+
+const getSupervisorsTreeQuery = [
+  query('locationId').optional().isUUID().withMessage('locationId must be a valid UUID'),
+  query('q').optional().isString().trim().isLength({ max: 100 }),
+  query('includeInactive').optional().isBoolean().toBoolean(),
+];
+
+const getMyEmployeesQuery = [
+  query('q').optional().isString().trim().isLength({ max: 100 }),
+  query('includeInactive').optional().isBoolean().toBoolean(),
+];
+
+const setAccessGrants = [
+  body('userIds').isArray({ min: 1 }).withMessage('userIds must be an array'),
+  body('userIds.*').isUUID().withMessage('Each userId must be a valid UUID'),
+  body('codes').isArray().withMessage('codes must be an array'),
+  body('codes.*').isString().withMessage('Each code must be a string'),
 ];
 
 module.exports = {
@@ -137,8 +192,11 @@ module.exports = {
   registerServiceCenter,
   userIdParam,
   changePassword,
-  assignRole,
-  assignPermissions,
+  resetPassword,
   login,
   getUsersQuery,
+  setAccessGrants,
+  bulkAssignSupervisor,
+  getSupervisorsTreeQuery,
+  getMyEmployeesQuery,
 };

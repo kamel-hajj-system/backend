@@ -8,25 +8,28 @@
     "dev": "nodemon src/index.js",
     "dev:local": "PORT=5001 nodemon src/index.js",
     "db:init": "node scripts/init-db.js",
-    "db:migrate": "prisma migrate deploy",
+    "db:migrate": "prisma db push",
     "db:ensure": "node scripts/ensure-migrations.js",
-    "db:setup": "node scripts/ensure-migrations.js && node modules/users/seeds/run-seed.js",
-    "db:seed": "node modules/users/seeds/run-seed.js",
+    "db:setup": "node scripts/seed-superadmin.js",
+    "db:seed": "node scripts/seed-superadmin.js",
     "test": "node --test modules/users/tests/*.test.js"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "express": "^4.19.2",
     "express-rate-limit": "^7.1.5",
     "express-validator": "^7.0.1",
+    "geoip-lite": "^1.4.10",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.11.5",
-    "@prisma/client": "^5.22.0"
+    "luxon": "^3.7.2",
+    "pg": "^8.11.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
@@ -34,4 +37,3 @@
     "supertest": "^6.3.4"
   }
 }
-

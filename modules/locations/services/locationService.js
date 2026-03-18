@@ -1,57 +1,45 @@
 const { prisma } = require('../../users/models');
 
-/**
- * List locations. Optional filter by isActive (default: all).
- */
 async function getLocations(options = {}) {
   const { isActive } = options;
   const where = {};
   if (isActive !== undefined) where.isActive = isActive;
 
-  return prisma.location.findMany({
+  return prisma.shift_Location.findMany({
     where,
     orderBy: { name: 'asc' },
   });
 }
 
-/**
- * Get one location by id.
- */
 async function getLocationById(id) {
-  return prisma.location.findUnique({
-    where: { id },
-  });
+  return prisma.shift_Location.findUnique({ where: { id } });
 }
 
-/**
- * Create location.
- */
 async function createLocation(data) {
-  return prisma.location.create({
+  return prisma.shift_Location.create({
     data: {
       name: data.name.trim(),
       locationAr: data.locationAr ? data.locationAr.trim() : null,
+      zoneCenterLat: data.zoneCenterLat ?? null,
+      zoneCenterLng: data.zoneCenterLng ?? null,
+      zoneRadiusMeters: data.zoneRadiusMeters ?? null,
       isActive: data.isActive !== false,
     },
   });
 }
 
-/**
- * Update location.
- */
 async function updateLocation(id, data) {
-  const updatePayload = {};
-  if (data.name !== undefined) updatePayload.name = data.name.trim();
+  const payload = {};
+  if (data.name !== undefined) payload.name = data.name.trim();
   if (data.locationAr !== undefined) {
-    updatePayload.locationAr =
-      data.locationAr === null ? null : data.locationAr.trim();
+    payload.locationAr = data.locationAr === null ? null : data.locationAr.trim();
   }
-  if (data.isActive !== undefined) updatePayload.isActive = data.isActive;
+  if (data.zoneCenterLat !== undefined) payload.zoneCenterLat = data.zoneCenterLat ?? null;
+  if (data.zoneCenterLng !== undefined) payload.zoneCenterLng = data.zoneCenterLng ?? null;
+  if (data.zoneRadiusMeters !== undefined) payload.zoneRadiusMeters = data.zoneRadiusMeters ?? null;
+  if (data.isActive !== undefined) payload.isActive = data.isActive;
 
-  return prisma.location.update({
-    where: { id },
-    data: updatePayload,
-  });
+  return prisma.shift_Location.update({ where: { id }, data: payload });
 }
 
 module.exports = {

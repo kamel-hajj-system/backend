@@ -1,16 +1,12 @@
 const userService = require('../services/userService');
 const authService = require('../services/authService');
-const activityService = require('../services/activityService');
-const { ActivityAction } = require('../models/constants');
+const { logAudit } = require('../services/auditLogService');
 
-/**
- * POST /users/login
- */
 async function login(req, res, next) {
   try {
     const email = req.body?.email;
     const password = req.body?.password;
-    if (email == null || password == null || String(email).trim() === '' || String(password) === '') {
+    if (!email || !password) {
       return res.status(400).json({ error: 'email and password are required' });
     }
     let result = await authService.authenticateSuperAdmin(email, password);
@@ -20,68 +16,65 @@ async function login(req, res, next) {
     if (!result) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
-    const u = result.user;
-    const direct = (u.userPermissions || []).map((up) => up.permission?.name).filter(Boolean);
-    const fromGroups = (u.userGroups || []).flatMap((ug) =>
-      (ug.group?.permissions || []).map((gp) => gp.permission?.name).filter(Boolean)
-    );
-    const permissionNames = [...new Set([...direct, ...fromGroups])];
-    result.user = { ...u, permissionNames };
-    try {
-      await activityService.logActivity({
-        userId: result.user.id,
-        action: ActivityAction.LOGIN,
-        ipAddress: req.ip || req.connection?.remoteAddress || null,
-        userAgent: req.get('User-Agent') || null,
-      });
-    } catch (logErr) {
-      console.error('Activity log failed (login still succeeds):', logErr);
-    }
-    return res.json(result);
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * POST /users/logout (optional: can be client-side token discard; we only log if authenticated)
- */
-async function logout(req, res, next) {
-  try {
-    if (req.userId) {
-      await activityService.logActivity({
-        userId: req.userId,
-        action: ActivityAction.LOGOUT,
-        ipAddress: req.ip || req.connection?.remoteAddress,
-        userAgent: req.get('User-Agent'),
+    await logAudit({ req, userId: result.user?.id, action: 'auth.login', entity: 'user', entityId: result.user?.id, meta: { isSuperAdmin: !!result.user?.isSuperAdmin } });
+    // Set refresh token in httpOnly cookie
+    if (result.refreshToken) {
+      res.cookie('kamel_refresh', result.refreshToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/api/users/refresh',
+        maxAge: 30 * 24 * 60 * 60 * 1000,
       });
     }
-    return res.json({ message: 'Logged out' });
+    const { refreshToken, ...safe } = result;
+    return res.json(safe);
   } catch (err) {
     next(err);
   }
 }
 
-/**
- * GET /users/me — current user with permissions (for frontend auth state).
- */
-async function getMe(req, res, next) {
+async function logout(req, res) {
+  const token = req.cookies?.kamel_refresh;
+  if (token) await authService.revokeRefreshToken(token);
+  res.clearCookie('kamel_refresh', { path: '/api/users/refresh' });
+  await logAudit({ req, userId: req.user?.id, action: 'auth.logout', entity: 'user', entityId: req.user?.id });
+  return res.json({ message: 'Logged out' });
+}
+
+async function getMe(req, res) {
+  return res.json(req.user);
+}
+
+async function refresh(req, res, next) {
   try {
-    return res.json(req.user);
+    const token = req.cookies?.kamel_refresh;
+    const result = await authService.rotateRefreshToken(token);
+    if (!result) return res.status(401).json({ error: 'Invalid refresh session' });
+    await logAudit({ req, userId: result.user?.id, action: 'auth.refresh', entity: 'user', entityId: result.user?.id });
+    res.cookie('kamel_refresh', result.refreshToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/api/users/refresh',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+    const { refreshToken, ...safe } = result;
+    return res.json(safe);
   } catch (err) {
     next(err);
   }
 }
 
-/**
- * GET /users
- */
 async function getUsers(req, res, next) {
   try {
-    const { page, limit, isActive, role, locationId } = req.query;
-    const options = { page, limit, role, locationId: locationId || undefined };
+    const { page, limit, isActive, role, locationId, userType, q } = req.query;
+    const options = { page, limit, role, userType, q, locationId: locationId || undefined };
     if (isActive !== undefined) {
       options.isActive = isActive === true || isActive === 'true';
+    }
+    if (req.path.startsWith('/hr/')) {
+      options.excludeSuperAdmin = true;
     }
     const result = await userService.getUsers(options);
     return res.json(result);
@@ -90,40 +83,36 @@ async function getUsers(req, res, next) {
   }
 }
 
-/**
- * GET /users/:id
- */
+async function bulkAssignSupervisor(req, res, next) {
+  try {
+    const result = await userService.bulkAssignSupervisor(req.body);
+    return res.json(result);
+  } catch (err) {
+    if (err.code === 'SUPERVISOR_INVALID') return res.status(400).json({ error: err.message });
+    next(err);
+  }
+}
+
 async function getUserById(req, res, next) {
   try {
     const user = await userService.getUserById(req.params.id);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    if (!user) return res.status(404).json({ error: 'User not found' });
     return res.json(user);
   } catch (err) {
     next(err);
   }
 }
 
-/**
- * POST /users/register/employee — public; role=Employee, userType=Company.
- */
 async function registerEmployee(req, res, next) {
   try {
     const user = await userService.registerEmployee(req.body);
     return res.status(201).json(user);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'Email already in use' });
-    if (err.code === 'SHIFT_NOT_FOUND') return res.status(400).json({ error: err.message });
-    if (err.code === 'SHIFT_NOT_FOR_EMPLOYEE') return res.status(400).json({ error: err.message });
-    if (err.code === 'LOCATION_INVALID') return res.status(400).json({ error: err.message });
     next(err);
   }
 }
 
-/**
- * POST /users/register/service-center — public; role=Supervisor, userType=ServiceCenter.
- */
 async function registerServiceCenter(req, res, next) {
   try {
     const user = await userService.registerServiceCenter(req.body);
@@ -134,116 +123,112 @@ async function registerServiceCenter(req, res, next) {
   }
 }
 
-/**
- * POST /users — Super Admin only.
- */
 async function createUser(req, res, next) {
   try {
-    const actorId = req.userId || null;
-    const user = await userService.createUser(req.body, actorId);
+    const user = await userService.createUser(req.body);
+    await logAudit({ req, userId: req.user?.id, action: 'user.create', entity: 'user', entityId: user?.id });
     return res.status(201).json(user);
   } catch (err) {
-    if (err.code === 'P2002') {
-      return res.status(409).json({ error: 'Email already in use' });
-    }
+    if (err.code === 'P2002') return res.status(409).json({ error: 'Email already in use' });
     next(err);
   }
 }
 
-/**
- * PATCH /users/:id
- */
 async function updateUser(req, res, next) {
   try {
-    const actorId = req.userId || null;
-    const user = await userService.updateUser(req.params.id, req.body, actorId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    const user = await userService.updateUser(req.params.id, req.body);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    await logAudit({ req, userId: req.user?.id, action: 'user.update', entity: 'user', entityId: user?.id });
     return res.json(user);
   } catch (err) {
-    if (err.code === 'P2002') {
-      return res.status(409).json({ error: 'Email already in use' });
-    }
+    if (err.code === 'P2002') return res.status(409).json({ error: 'Email already in use' });
     next(err);
   }
 }
 
-/**
- * DELETE /users/:id (soft delete)
- */
 async function softDeleteUser(req, res, next) {
   try {
-    const actorId = req.userId || null;
-    const user = await userService.softDeleteUser(req.params.id, actorId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    const user = await userService.softDeleteUser(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    await logAudit({ req, userId: req.user?.id, action: 'user.delete', entity: 'user', entityId: user?.id });
     return res.json({ message: 'User deleted', user });
   } catch (err) {
-    if (err.code === 'SUPER_ADMIN_PROTECTED') {
-      return res.status(403).json({ error: err.message });
-    }
+    if (err.code === 'SUPER_ADMIN_PROTECTED') return res.status(403).json({ error: err.message });
     next(err);
   }
 }
 
-/**
- * POST /users/:id/change-password
- */
 async function changePassword(req, res, next) {
   try {
     const { currentPassword, newPassword } = req.body;
-    const actorId = req.userId || null;
-    await userService.changePassword(
-      req.params.id,
-      currentPassword,
-      newPassword,
-      actorId
-    );
+    await userService.changePassword(req.params.id, currentPassword, newPassword);
+    await userService.bumpTokenVersion(req.params.id);
+    await authService.revokeUserRefreshSessions(req.params.id);
+    await logAudit({ req, userId: req.user?.id, action: 'user.change_password', entity: 'user', entityId: req.params.id });
     return res.json({ message: 'Password changed' });
   } catch (err) {
-    if (err.code === 'INVALID_PASSWORD') {
-      return res.status(400).json({ error: err.message });
-    }
+    if (err.code === 'INVALID_PASSWORD') return res.status(400).json({ error: err.message });
     next(err);
   }
 }
 
-/**
- * POST /users/:id/assign-role
- */
-async function assignRole(req, res, next) {
+async function hrResetPassword(req, res, next) {
   try {
-    const actorId = req.userId || null;
-    const user = await userService.assignRole(req.params.id, req.body.role, actorId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    return res.json(user);
+    const { newPassword } = req.body;
+    await userService.resetPassword(req.params.id, newPassword);
+    await userService.bumpTokenVersion(req.params.id);
+    await authService.revokeUserRefreshSessions(req.params.id);
+    await logAudit({ req, userId: req.user?.id, action: 'user.reset_password', entity: 'user', entityId: req.params.id });
+    return res.json({ message: 'Password reset' });
   } catch (err) {
-    if (err.code === 'SUPER_ADMIN_PROTECTED') {
-      return res.status(403).json({ error: err.message });
-    }
+    if (err.code === 'SUPER_ADMIN_PROTECTED') return res.status(403).json({ error: err.message });
     next(err);
   }
 }
 
-/**
- * POST /users/:id/assign-permissions
- */
-async function assignPermissions(req, res, next) {
+async function setAccessGrants(req, res, next) {
   try {
-    const actorId = req.userId || null;
-    const user = await userService.assignPermissions(
-      req.params.id,
-      req.body.permissionIds || [],
-      actorId
-    );
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    return res.json(user);
+    const { userIds, codes } = req.body || {};
+    const result = await userService.setUserAccessGrants(userIds || [], codes || []);
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getAccessGrants(req, res, next) {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    const codes = await userService.getUserAccessGrants(userId);
+    return res.json({ userId, codes });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getSupervisorsTree(req, res, next) {
+  try {
+    const { locationId, q, includeInactive } = req.query || {};
+    const list = await userService.getSupervisorsTree({
+      locationId: locationId || undefined,
+      q,
+      includeInactive: includeInactive === undefined ? true : includeInactive === true || includeInactive === 'true',
+    });
+    return res.json({ data: list });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getMyEmployees(req, res, next) {
+  try {
+    const { q, includeInactive } = req.query || {};
+    const result = await userService.getMyEmployees(req.user.id, {
+      q,
+      includeInactive: includeInactive === undefined ? true : includeInactive === true || includeInactive === 'true',
+    });
+    return res.json(result);
   } catch (err) {
     next(err);
   }
@@ -252,6 +237,7 @@ async function assignPermissions(req, res, next) {
 module.exports = {
   login,
   logout,
+  refresh,
   getMe,
   registerEmployee,
   registerServiceCenter,
@@ -261,6 +247,10 @@ module.exports = {
   updateUser,
   softDeleteUser,
   changePassword,
-  assignRole,
-  assignPermissions,
+  hrResetPassword,
+  setAccessGrants,
+  getAccessGrants,
+  bulkAssignSupervisor,
+  getSupervisorsTree,
+  getMyEmployees,
 };

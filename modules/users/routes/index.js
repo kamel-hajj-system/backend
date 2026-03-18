@@ -2,8 +2,10 @@ const express = require('express');
 const controller = require('../controllers/userController');
 const {
   requireAuth,
-  requirePermission,
-  allowSelfOrPermission,
+  requireSuperAdmin,
+  requireHr,
+  requireHrCanEdit,
+  requireCompanySupervisor,
   optionalAuth,
   loginLimiter,
   sensitiveLimiter,
@@ -16,123 +18,124 @@ const {
   registerServiceCenter,
   userIdParam,
   changePassword,
-  assignRole,
-  assignPermissions,
+  resetPassword,
   login,
   getUsersQuery,
+  setAccessGrants,
+  bulkAssignSupervisor,
+  getSupervisorsTreeQuery,
+  getMyEmployeesQuery,
 } = require('../validations/userValidations');
 
 const router = express.Router();
 
-// —— Public (rate-limited) ——
-router.post(
-  '/users/login',
-  loginLimiter,
-  login,
-  handleValidationErrors,
-  controller.login
-);
-
-// Optional auth for logout (to log activity if token present)
+router.post('/users/login', loginLimiter, login, handleValidationErrors, controller.login);
 router.post('/users/logout', optionalAuth, controller.logout);
+router.post('/users/refresh', controller.refresh);
 
-// —— Public registration (no auth; role assigned by form type) ——
 router.post(
   '/users/register/employee',
-  loginLimiter,
-  sensitiveLimiter,
-  registerEmployee,
-  handleValidationErrors,
+  loginLimiter, sensitiveLimiter,
+  registerEmployee, handleValidationErrors,
   controller.registerEmployee
 );
 router.post(
   '/users/register/service-center',
-  loginLimiter,
-  sensitiveLimiter,
-  registerServiceCenter,
-  handleValidationErrors,
+  loginLimiter, sensitiveLimiter,
+  registerServiceCenter, handleValidationErrors,
   controller.registerServiceCenter
 );
 
-// —— Current user (for frontend auth state with permissions) ——
 router.get('/users/me', requireAuth, controller.getMe);
 
-// —— Protected (permission-based) ——
+router.get('/users', requireAuth, requireSuperAdmin, getUsersQuery, handleValidationErrors, controller.getUsers);
+
+// Supervisors tree (Super Admin) - MUST be before /users/:id
 router.get(
-  '/users',
+  '/users/supervisors-tree',
   requireAuth,
-  requirePermission('users.view'),
+  requireSuperAdmin,
+  getSupervisorsTreeQuery,
+  handleValidationErrors,
+  controller.getSupervisorsTree
+);
+
+router.get('/users/:id', requireAuth, requireSuperAdmin, userIdParam, handleValidationErrors, controller.getUserById);
+router.post('/users', requireAuth, requireSuperAdmin, sensitiveLimiter, createUser, handleValidationErrors, controller.createUser);
+router.patch('/users/:id', requireAuth, requireSuperAdmin, sensitiveLimiter, updateUser, handleValidationErrors, controller.updateUser);
+router.delete('/users/:id', requireAuth, requireSuperAdmin, sensitiveLimiter, userIdParam, handleValidationErrors, controller.softDeleteUser);
+router.post('/users/:id/change-password', requireAuth, sensitiveLimiter, changePassword, handleValidationErrors, controller.changePassword);
+
+// Super Admin: bulk assign supervisor/role for Company users
+router.post(
+  '/users/bulk/assign-supervisor',
+  requireAuth,
+  requireSuperAdmin,
+  sensitiveLimiter,
+  bulkAssignSupervisor,
+  handleValidationErrors,
+  controller.bulkAssignSupervisor
+);
+
+// Super Admin: access grants (modules/pages)
+router.get('/access/grants', requireAuth, requireSuperAdmin, controller.getAccessGrants);
+router.post(
+  '/access/grants',
+  requireAuth,
+  requireSuperAdmin,
+  sensitiveLimiter,
+  setAccessGrants,
+  handleValidationErrors,
+  controller.setAccessGrants
+);
+
+// HR views / editing (any HR user can view; only Supervisor/EmpManage can edit)
+router.get(
+  '/hr/users',
+  requireAuth,
+  requireHr,
   getUsersQuery,
   handleValidationErrors,
   controller.getUsers
 );
 
+// Supervisors tree (HR)
 router.get(
-  '/users/:id',
+  '/hr/supervisors-tree',
   requireAuth,
-  allowSelfOrPermission('users.view'),
-  userIdParam,
+  requireHr,
+  getSupervisorsTreeQuery,
   handleValidationErrors,
-  controller.getUserById
+  controller.getSupervisorsTree
 );
-
-router.post(
-  '/users',
-  requireAuth,
-  requirePermission('users.create'),
-  sensitiveLimiter,
-  createUser,
-  handleValidationErrors,
-  controller.createUser
-);
-
 router.patch(
-  '/users/:id',
+  '/hr/users/:id',
   requireAuth,
-  requirePermission('users.update'),
+  requireHrCanEdit,
   sensitiveLimiter,
   updateUser,
   handleValidationErrors,
   controller.updateUser
 );
 
-router.delete(
-  '/users/:id',
+router.post(
+  '/hr/users/:id/reset-password',
   requireAuth,
-  requirePermission('users.delete'),
+  requireHrCanEdit,
   sensitiveLimiter,
-  userIdParam,
+  resetPassword,
   handleValidationErrors,
-  controller.softDeleteUser
+  controller.hrResetPassword
 );
 
-router.post(
-  '/users/:id/change-password',
+// Company portal: supervisor can see his employees
+router.get(
+  '/portal/company/my-employees',
   requireAuth,
-  sensitiveLimiter,
-  changePassword,
+  requireCompanySupervisor,
+  getMyEmployeesQuery,
   handleValidationErrors,
-  controller.changePassword
-);
-
-router.post(
-  '/users/:id/assign-role',
-  requireAuth,
-  requirePermission('users.assign_role'),
-  sensitiveLimiter,
-  assignRole,
-  handleValidationErrors,
-  controller.assignRole
-);
-
-router.post(
-  '/users/:id/assign-permissions',
-  requireAuth,
-  requirePermission('users.assign_permissions'),
-  sensitiveLimiter,
-  assignPermissions,
-  handleValidationErrors,
-  controller.assignPermissions
+  controller.getMyEmployees
 );
 
 module.exports = router;

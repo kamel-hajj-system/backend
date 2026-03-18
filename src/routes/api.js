@@ -5,8 +5,7 @@ const router = express.Router();
 const userRoutes = require('../../modules/users/routes');
 const locationRoutes = require('../../modules/locations/routes');
 const shiftRoutes = require('../../modules/shifts/routes');
-const permissionRoutes = require('../../modules/permissions/routes');
-const groupRoutes = require('../../modules/groups/routes');
+const attendanceRoutes = require('../../modules/attendance/routes');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -22,27 +21,18 @@ router.get('/health', (req, res) => {
   res.json({ message: 'API router is working' });
 });
 
-router.get('/db-health', async (req, res, next) => {
+router.get('/db-health', async (req, res) => {
   try {
     const result = await pool.query('SELECT 1 AS ok');
-    return res.json({
-      status: 'ok',
-      details: result.rows[0],
-    });
+    return res.json({ status: 'ok', details: result.rows[0] });
   } catch (error) {
-    return res.status(500).json({
-      status: 'error',
-      error: error.message,
-    });
+    return res.status(500).json({ status: 'error', error: error.message });
   }
 });
 
-// User Management Module (enterprise-ready: auth, soft delete, audit, rate limit)
 router.use('/', userRoutes);
 router.use('/', locationRoutes);
 router.use('/', shiftRoutes);
-router.use('/', permissionRoutes);
-router.use('/', groupRoutes);
+router.use('/', attendanceRoutes);
 
 module.exports = router;
-
