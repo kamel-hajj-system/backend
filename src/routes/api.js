@@ -6,6 +6,8 @@ const userRoutes = require('../../modules/users/routes');
 const locationRoutes = require('../../modules/locations/routes');
 const shiftRoutes = require('../../modules/shifts/routes');
 const attendanceRoutes = require('../../modules/attendance/routes');
+const notificationRoutes = require('../../modules/notifications/routes');
+const pushRoutes = require('../../modules/push/routes');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -34,5 +36,7 @@ router.use('/', userRoutes);
 router.use('/', locationRoutes);
 router.use('/', shiftRoutes);
 router.use('/', attendanceRoutes);
+router.use('/', notificationRoutes);
+router.use('/', pushRoutes);
 
 module.exports = router;

@@ -12,6 +12,7 @@
     "db:ensure": "node scripts/ensure-migrations.js",
     "db:setup": "node scripts/seed-superadmin.js",
     "db:seed": "node scripts/seed-superadmin.js",
+    "vapid:keys": "npx web-push generate-vapid-keys",
     "test": "node --test modules/users/tests/*.test.js"
   },
   "keywords": [],
@@ -29,7 +30,8 @@
     "geoip-lite": "^1.4.10",
     "jsonwebtoken": "^9.0.2",
     "luxon": "^3.7.2",
-    "pg": "^8.11.5"
+    "pg": "^8.11.5",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",

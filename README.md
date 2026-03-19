@@ -26,6 +26,7 @@ You can use either a single connection string or individual parameters:
 - `FRONTEND_BUILD_PATH` (optional; in production set to the path where the frontend build is in the container, e.g. `/app/frontend/dist`)
 - **User module (JWT):** `JWT_SECRET` (required in production), `JWT_EXPIRES_IN` (default `7d`), `LOGIN_RATE_LIMIT_MAX`, `SENSITIVE_RATE_LIMIT_MAX`
 - **Super Admin:** `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` (required in production; in development default to `superadmin`/`superadmin` if unset). Set these in your server (e.g. Dokploy → Environment). The seed creates/updates the super admin user using these values.
+- **Web Push (optional):** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` (e.g. `mailto:support@yourdomain.com`). Generate keys with `npm run vapid:keys` in this folder, then set the three variables in Dokploy. Without them, in-app notifications still work; device push is disabled until configured. After changing the schema, run `npx prisma db push` (or your migration flow).
 
 Example `.env` (do **not** commit this file; copy from `.env.example`):
 

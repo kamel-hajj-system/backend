@@ -84,6 +84,9 @@ model User {
   attendanceRecords AttendanceRecord[]
   refreshSessions  RefreshSession[]
   auditLogs        AuditLog[]
+  createdNotifications Notification[] @relation("NotificationCreator")
+  notificationRecipients NotificationRecipient[]
+  pushSubscriptions    PushSubscription[]
 
   @@index([email])
   @@index([isDeleted, isActive])
@@ -174,4 +177,50 @@ model AttendanceRecord {
   @@index([userId, checkInAt, checkOutAt])
   @@index([shiftId, shiftStartAt])
   @@map("attendance_records")
+}
+
+model Notification {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String?
+  message     String
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  createdBy   User? @relation("NotificationCreator", fields: [createdById], references: [id])
+  recipients  NotificationRecipient[]
+
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String   @id @default(uuid()) @db.Uuid
+  notificationId String   @map("notification_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  isRead         Boolean  @default(false) @map("is_read")
+  readAt         DateTime? @map("read_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@unique([notificationId, userId])
+  @@index([userId, isRead, createdAt])
+  @@map("notification_recipients")
+}
+
+/// Browser Web Push subscription (one row per device / endpoint).
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @unique
+  p256dh    String   @map("p256dh")
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
