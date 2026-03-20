@@ -35,10 +35,29 @@ const app = express();
 
 const PORT = process.env.PORT || 5001;
 
-// Security: behind reverse proxies (Nginx/Cloudflare) set TRUST_PROXY=1
-if (process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true') {
-  app.set('trust proxy', 1);
-}
+/**
+ * Reverse proxies (Dokploy, Traefik, Nginx) send X-Forwarded-For.
+ * express-rate-limit requires trust proxy to be set when that header is present (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR).
+ * - Production: trust 1 hop by default (set TRUST_PROXY=0 to disable).
+ * - TRUST_PROXY=2 (number): trust two hops if you have multiple proxies.
+ */
+(function configureTrustProxy() {
+  const raw = process.env.TRUST_PROXY;
+  if (raw === 'false' || raw === '0') return;
+
+  let hops = 0;
+  if (raw === 'true' || raw === '1') {
+    hops = 1;
+  } else if (raw !== undefined && raw !== '' && !Number.isNaN(Number(raw))) {
+    hops = Math.max(1, parseInt(String(raw), 10));
+  } else if (process.env.NODE_ENV === 'production') {
+    hops = 1;
+  }
+
+  if (hops > 0) {
+    app.set('trust proxy', hops);
+  }
+})();
 
 // Security: restrict CORS in production by allowlist
 const corsOrigins = (process.env.CORS_ORIGINS || '')

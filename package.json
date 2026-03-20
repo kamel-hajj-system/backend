@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "start:with-db": "prisma db push && node src/index.js",
     "dev": "nodemon src/index.js",
     "dev:local": "PORT=5001 nodemon src/index.js",
     "db:init": "node scripts/init-db.js",
@@ -31,11 +32,11 @@
     "jsonwebtoken": "^9.0.2",
     "luxon": "^3.7.2",
     "pg": "^8.11.5",
+    "prisma": "^5.22.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
-    "prisma": "^5.22.0",
     "supertest": "^6.3.4"
   }
 }
