@@ -29,6 +29,7 @@ if (!process.env.DATABASE_URL && process.env.PGHOST) {
 }
 
 const apiRouter = require('./routes/api');
+const { startScheduledNotificationsWorker } = require('./scheduledNotificationsWorker');
 
 const app = express();
 
@@ -145,6 +146,7 @@ ensureDatabase()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Backend server listening on port ${PORT}`);
+      startScheduledNotificationsWorker();
     });
   })
   .catch((err) => {

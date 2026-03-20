@@ -20,6 +20,11 @@ enum Role {
   EmpManage
 }
 
+enum NotificationScheduleKind {
+  ONCE
+  DAILY_RANGE
+}
+
 model Shift_Location {
   id          String   @id @default(uuid()) @db.Uuid
   name        String
@@ -86,7 +91,8 @@ model User {
   auditLogs        AuditLog[]
   createdNotifications Notification[] @relation("NotificationCreator")
   notificationRecipients NotificationRecipient[]
-  pushSubscriptions    PushSubscription[]
+  pushSubscriptions         PushSubscription[]
+  scheduledNotifications      ScheduledNotification[]
 
   @@index([email])
   @@index([isDeleted, isActive])
@@ -223,4 +229,30 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+model ScheduledNotification {
+  id             String                   @id @default(uuid()) @db.Uuid
+  createdById    String                   @map("created_by_id") @db.Uuid
+  /// supervisor | hr | superadmin
+  scope          String                   @map("scope")
+  title          String?
+  message        String
+  recipientIds   Json                     @map("recipient_ids")
+  scheduleKind   NotificationScheduleKind @map("schedule_kind")
+  scheduledAt    DateTime?                @map("scheduled_at")
+  rangeStartDate DateTime?                @db.Date @map("range_start_date")
+  rangeEndDate   DateTime?                @db.Date @map("range_end_date")
+  /// Riyadh local time "HH:mm"
+  dailyTimeLocal String?                  @map("daily_time_local")
+  status         String                   @default("PENDING") @map("status")
+  lastFiredDate  DateTime?                @db.Date @map("last_fired_date")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduleKind])
+  @@index([createdById, status])
+  @@map("scheduled_notifications")
 }

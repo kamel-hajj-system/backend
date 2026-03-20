@@ -67,7 +67,11 @@ async function sendPushToUserIds(userIds, payload) {
   if (!Array.isArray(userIds) || userIds.length === 0) return;
   if (!initVapid()) return;
 
-  const title = typeof payload.title === 'string' ? payload.title : 'Kamel';
+  const baseTitle = typeof payload.title === 'string' ? payload.title : 'Kamel';
+  const title =
+    payload.senderPrefix && String(payload.senderPrefix).trim()
+      ? `${String(payload.senderPrefix).trim()} — ${baseTitle}`
+      : baseTitle;
   const body = typeof payload.body === 'string' ? payload.body : '';
   const data = payload.data && typeof payload.data === 'object' ? payload.data : { url: '/' };
 
