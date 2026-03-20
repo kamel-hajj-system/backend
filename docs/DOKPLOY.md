@@ -9,19 +9,21 @@ The API sits behind a reverse proxy that sets `X-Forwarded-For`. **Trust proxy i
 
 ## `scheduled_notifications` table missing (P2021)
 
-Production Postgres must match the Prisma schema. After pulling code that adds `ScheduledNotification`, run **once** (or on every deploy if you use this pattern):
+Your other tables (`notifications`, `users`, etc.) are fine; only **`scheduled_notifications`** (+ enum `NotificationScheduleKind`) is new for the scheduling feature.
+
+### Option A (recommended)
+
+From the backend app directory, against production `DATABASE_URL`:
 
 ```bash
-cd /app   # or your backend root
 npx prisma db push
-npx prisma generate   # usually already done at image build
 ```
 
-**Dokploy start command:** use sync + start so new tables are always applied:
+Or use **`npm run start:with-db`** as the Dokploy start command so schema sync runs before `node`.
 
-```bash
-npm run start:with-db
-```
+### Option B (SQL only)
+
+If you cannot run Prisma in the container, execute `prisma/sql/add_scheduled_notifications.sql` once in the production DB (psql / hosting SQL console).
 
 Default `npm start` does **not** run `db push` (avoids surprises on some setups).
 
