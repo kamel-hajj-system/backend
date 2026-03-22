@@ -58,6 +58,67 @@ model Shift {
   @@map("shifts")
 }
 
+/// Service center master record. `code` is the human-facing ID (e.g. "110") shown at signup; `User.serviceCenterId` stores this row's UUID `id`.
+model ServiceCenter {
+  id                String   @id @default(uuid()) @db.Uuid
+  /// Public center code assigned by super admin (e.g. "110"); unique; used in signup dropdown label.
+  code              String   @unique
+  /// English display: always `Service Center {code}` (set by backend).
+  name              String?
+  /// Arabic display: always `مركز الخدمة {code}` (set by backend).
+  nameAr            String?  @map("name_ar")
+  presidentName     String?  @map("president_name")
+  vicePresidentName String?  @map("vice_president_name")
+  maxCapacity       Int?     @map("max_capacity")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  nationalities ServiceCenterNationality[]
+
+  @@map("service_centers")
+}
+
+/// Reference list for pilgrim nationalities. Totals are national-level targets; per–service-center caps/arrivals live on ServiceCenterNationality.
+model PilgrimNationality {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Internal / display code (number or string). Not used for flag images.
+  code      String?  @unique
+  /// ISO 3166-1 alpha-2 (SA) or common alpha-3 (SAU) for flag SVGs in the portal.
+  flagCode  String?  @map("flag_code") @db.VarChar(32)
+  name      String
+  nameAr    String?  @map("name_ar")
+  notes     String?
+  /// Total pilgrim count for this nationality (e.g. 300).
+  totalPilgrimsCount         Int?     @map("total_pilgrims_count")
+  /// Total arriving pilgrims for this nationality (national-level figure; can mirror sum of centers).
+  totalArrivingPilgrimsCount Int?     @map("total_arriving_pilgrims_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  serviceCenterLinks ServiceCenterNationality[]
+
+  @@map("pilgrim_nationalities")
+}
+
+/// Per–service-center stats per nationality (many nationalities per center).
+model ServiceCenterNationality {
+  id                    String   @id @default(uuid()) @db.Uuid
+  serviceCenterId       String   @map("service_center_id") @db.Uuid
+  pilgrimNationalityId  String   @map("pilgrim_nationality_id") @db.Uuid
+  pilgrimsCount         Int      @default(0) @map("pilgrims_count")
+  arrivingPilgrimsCount Int      @default(0) @map("arriving_pilgrims_count")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  serviceCenter ServiceCenter    @relation(fields: [serviceCenterId], references: [id], onDelete: Cascade)
+  nationality   PilgrimNationality @relation(fields: [pilgrimNationalityId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceCenterId, pilgrimNationalityId])
+  @@index([serviceCenterId])
+  @@index([pilgrimNationalityId])
+  @@map("service_center_nationalities")
+}
+
 model User {
   id              String    @id @default(uuid()) @db.Uuid
   fullName        String    @map("full_name")

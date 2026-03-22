@@ -2,9 +2,11 @@
  * Singleton Prisma client for the users module.
  * Prevents multiple instances in development (hot reload).
  *
- * If you add models and run `npx prisma generate` while the server is running, Node may still
- * hold a stale @prisma/client in require.cache — scheduledNotification (etc.) will be missing.
- * In development we bust the cache and recreate once; if still broken, restart the server.
+ * If you change schema.prisma, run `npx prisma generate` (or `npm install` / `npm run dev` — see package.json)
+ * and restart the server. Otherwise you may see DB errors like "column pilgrims_count does not exist"
+ * when the DB was updated but Node still loaded an old @prisma/client.
+ * If you add models and run generate while the server is running, Node may still hold a stale client —
+ * scheduledNotification (etc.) will be missing. In development we bust the cache and recreate once.
  */
 const globalForPrisma = global;
 

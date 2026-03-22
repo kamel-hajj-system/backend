@@ -102,6 +102,24 @@ function requireCompanySupervisor(req, res, next) {
   return next();
 }
 
+/** Any of the given access grant codes (or Super Admin). */
+function requireAccessCode(codes) {
+  const list = (Array.isArray(codes) ? codes : [codes]).flat().filter(Boolean);
+  return (req, res, next) => {
+    if (req.isSuperAdmin) {
+      return next();
+    }
+    const granted = req.user?.accessCodes || [];
+    if (list.some((c) => granted.includes(c))) {
+      return next();
+    }
+    return res.status(403).json({ error: 'Access denied' });
+  };
+}
+
+/** Alias for permission routes (same as requireAccessCode). */
+const requirePermission = requireAccessCode;
+
 function optionalAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith('Bearer ')
@@ -151,5 +169,7 @@ module.exports = {
   requireHr,
   requireHrCanEdit,
   requireCompanySupervisor,
+  requireAccessCode,
+  requirePermission,
   optionalAuth,
 };

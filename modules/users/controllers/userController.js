@@ -119,6 +119,9 @@ async function registerServiceCenter(req, res, next) {
     return res.status(201).json(user);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'Email already in use' });
+    if (err.code === 'INVALID_SERVICE_CENTER' || err.code === 'SERVICE_CENTER_REQUIRED') {
+      return res.status(400).json({ error: err.message });
+    }
     next(err);
   }
 }

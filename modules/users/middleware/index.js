@@ -1,4 +1,13 @@
-const { requireAuth, requireSuperAdmin, requireHr, requireHrCanEdit, requireCompanySupervisor, optionalAuth } = require('./auth');
+const {
+  requireAuth,
+  requireSuperAdmin,
+  requireHr,
+  requireHrCanEdit,
+  requireCompanySupervisor,
+  requireAccessCode,
+  requirePermission,
+  optionalAuth,
+} = require('./auth');
 const { loginLimiter, sensitiveLimiter } = require('./rateLimit');
 
 module.exports = {
@@ -7,6 +16,8 @@ module.exports = {
   requireHr,
   requireHrCanEdit,
   requireCompanySupervisor,
+  requireAccessCode,
+  requirePermission,
   optionalAuth,
   loginLimiter,
   sensitiveLimiter,

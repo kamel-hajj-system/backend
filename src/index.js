@@ -149,7 +149,11 @@ async function ensureDatabase() {
       return;
     }
 
-    execSync('npx prisma db push', {
+    // Non-production: Prisma often requires --accept-data-loss for harmless changes (e.g. adding UNIQUE on `code`).
+    // Opt out (stricter): PRISMA_DB_PUSH_ACCEPT_DATA_LOSS=false
+    const devAcceptDataLoss = process.env.PRISMA_DB_PUSH_ACCEPT_DATA_LOSS !== 'false';
+    const devCmd = `npx prisma db push${devAcceptDataLoss ? ' --accept-data-loss' : ''}`;
+    execSync(devCmd, {
       stdio: 'inherit',
       cwd: path.resolve(__dirname, '..'),
       env: process.env,

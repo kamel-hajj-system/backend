@@ -280,6 +280,21 @@ async function registerEmployee(data) {
 }
 
 async function registerServiceCenter(data) {
+  const centerId = data.serviceCenterId?.trim();
+  if (!centerId) {
+    const err = new Error('Service center is required');
+    err.code = 'SERVICE_CENTER_REQUIRED';
+    throw err;
+  }
+  const center = await prisma.serviceCenter.findUnique({
+    where: { id: centerId },
+    select: { id: true },
+  });
+  if (!center) {
+    const err = new Error('Unknown or invalid service center');
+    err.code = 'INVALID_SERVICE_CENTER';
+    throw err;
+  }
   return createUser({
     ...data,
     userType: 'ServiceCenter',
@@ -287,7 +302,7 @@ async function registerServiceCenter(data) {
     locationId: null,
     shiftId: null,
     supervisorId: null,
-    serviceCenterId: data.serviceCenterId || null,
+    serviceCenterId: center.id,
   });
 }
 

@@ -47,9 +47,12 @@ const createUser = [
       return true;
     }),
   body('serviceCenterId')
-    .optional()
-    .isUUID()
-    .withMessage('serviceCenterId must be a valid UUID'),
+    .optional({ values: 'null' })
+    .custom((value) => {
+      if (value === null || value === undefined || value === '') return true;
+      return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(String(value));
+    })
+    .withMessage('serviceCenterId must be a valid UUID or empty'),
   body('isActive').optional().isBoolean().withMessage('isActive must be boolean'),
 ];
 
@@ -79,7 +82,11 @@ const registerServiceCenter = [
   body('email').trim().isEmail().withMessage('Valid email is required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('phone').optional().trim(),
-  body('serviceCenterId').optional().isUUID().withMessage('serviceCenterId must be a valid UUID'),
+  body('serviceCenterId')
+    .notEmpty()
+    .withMessage('serviceCenterId is required — select your service center')
+    .isUUID()
+    .withMessage('serviceCenterId must be a valid UUID'),
 ];
 
 const updateUser = [
@@ -110,9 +117,12 @@ const updateUser = [
       return true;
     }),
   body('serviceCenterId')
-    .optional()
-    .isUUID()
-    .withMessage('serviceCenterId must be a valid UUID'),
+    .optional({ values: 'null' })
+    .custom((value) => {
+      if (value === null || value === undefined || value === '') return true;
+      return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(String(value));
+    })
+    .withMessage('serviceCenterId must be a valid UUID or empty'),
   body('isActive').optional().isBoolean().withMessage('isActive must be boolean'),
 ];
 
