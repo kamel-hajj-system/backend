@@ -53,9 +53,24 @@ async function update(req, res, next) {
   }
 }
 
+async function remove(req, res, next) {
+  try {
+    const existing = await shiftService.getShiftById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Shift not found' });
+    await shiftService.deleteShift(req.params.id);
+    return res.status(204).send();
+  } catch (err) {
+    if (err.code === 'SHIFT_HAS_ATTENDANCE') {
+      return res.status(409).json({ error: err.message });
+    }
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   getById,
   create,
   update,
+  remove,
 };

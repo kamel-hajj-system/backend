@@ -26,5 +26,11 @@ router.patch(
   updateShift, handleValidationErrors,
   controller.update
 );
+router.delete(
+  '/shifts/:id',
+  requireAuth, requireSuperAdmin, sensitiveLimiter,
+  idParam, handleValidationErrors,
+  controller.remove
+);
 
 module.exports = router;

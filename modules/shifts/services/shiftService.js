@@ -104,6 +104,26 @@ async function updateShift(id, data) {
   });
 }
 
+/**
+ * Delete shift. Blocked if any attendance rows reference this shift (history).
+ * Clears shiftId on users still assigned to this shift, then deletes the row.
+ */
+async function deleteShift(id) {
+  const attendanceCount = await prisma.attendanceRecord.count({ where: { shiftId: id } });
+  if (attendanceCount > 0) {
+    const err = new Error('This shift has attendance records and cannot be deleted.');
+    err.code = 'SHIFT_HAS_ATTENDANCE';
+    throw err;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.updateMany({ where: { shiftId: id }, data: { shiftId: null } });
+    await tx.shift.delete({ where: { id } });
+  });
+
+  return { ok: true };
+}
+
 /** Parse time: Date object or "HH:mm" / "HH:mm:ss" string -> Date (epoch day). */
 function parseTime(value) {
   if (value instanceof Date) return value;
@@ -124,4 +144,5 @@ module.exports = {
   getShiftById,
   createShift,
   updateShift,
+  deleteShift,
 };
