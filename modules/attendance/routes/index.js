@@ -1,6 +1,6 @@
 const express = require('express');
 const controller = require('../controllers/attendanceController');
-const { requireAuth, requireHr } = require('../../users/middleware');
+const { requireAuth, requireHr, requireCompanySupervisor } = require('../../users/middleware');
 const { handleValidationErrors, listHrAttendanceQuery } = require('../validations/attendanceValidations');
 
 const router = express.Router();
@@ -12,6 +12,16 @@ router.post('/attendance/check-out', requireAuth, controller.checkOut);
 
 // HR - attendance overview
 router.get('/hr/attendance', requireAuth, requireHr, listHrAttendanceQuery, handleValidationErrors, controller.listHrAttendance);
+
+// Company supervisor - read-only attendance for direct reports only
+router.get(
+  '/portal/company/supervisor/attendance',
+  requireAuth,
+  requireCompanySupervisor,
+  listHrAttendanceQuery,
+  handleValidationErrors,
+  controller.listSupervisorAttendance
+);
 
 module.exports = router;
 

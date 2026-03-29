@@ -342,12 +342,20 @@ async function listHrAttendance(options = {}) {
     q,
     hasCheckIn,
     hasCheckOut,
+    /** If set, only attendance for users with this supervisor (direct reports). */
+    supervisorId,
   } = options;
 
   const where = {
     user: {
       isDeleted: false,
       isSuperAdmin: false,
+      ...(supervisorId
+        ? {
+            supervisorId,
+            userType: 'Company',
+          }
+        : {}),
     },
   };
 

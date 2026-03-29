@@ -20,6 +20,10 @@ const createShift = [
   body('startTime').notEmpty().withMessage('startTime is required'),
   body('endTime').notEmpty().withMessage('endTime is required'),
   body('isForEmployee').optional().isBoolean().withMessage('isForEmployee must be boolean'),
+  body('locationId')
+    .optional({ values: 'null' })
+    .custom((v) => v === null || v === undefined || v === '' || /^[0-9a-fA-F-]{36}$/.test(String(v)))
+    .withMessage('locationId must be a valid UUID or empty'),
 ];
 
 const updateShift = [
@@ -29,9 +33,16 @@ const updateShift = [
   body('startTime').optional(),
   body('endTime').optional(),
   body('isForEmployee').optional().isBoolean().withMessage('isForEmployee must be boolean'),
+  body('locationId')
+    .optional({ values: 'null' })
+    .custom((v) => v === null || v === undefined || v === '' || /^[0-9a-fA-F-]{36}$/.test(String(v)))
+    .withMessage('locationId must be a valid UUID or empty'),
 ];
 
-const listQuery = [query('isForEmployee').optional().isIn(['true', 'false'])];
+const listQuery = [
+  query('isForEmployee').optional().isIn(['true', 'false']),
+  query('locationId').optional().isUUID().withMessage('locationId must be a valid UUID'),
+];
 
 module.exports = {
   handleValidationErrors,

@@ -188,6 +188,37 @@ async function getMyEmployees(supervisorId, options = {}) {
   return { data: employees, total: employees.length };
 }
 
+/**
+ * Supervisor updates role for a direct report only (same scope as getMyEmployees).
+ */
+async function updateMyEmployeeRole(supervisorId, employeeId, role) {
+  const validRoles = ['EmpRead', 'EmpManage'];
+  if (!validRoles.includes(role)) {
+    const err = new Error('Invalid role');
+    err.code = 'INVALID_ROLE';
+    throw err;
+  }
+  const employee = await prisma.user.findFirst({
+    where: {
+      id: employeeId,
+      isDeleted: false,
+      isSuperAdmin: false,
+      userType: 'Company',
+      supervisorId,
+    },
+  });
+  if (!employee) {
+    const err = new Error('Employee not found or not in your team');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  await prisma.user.update({
+    where: { id: employeeId },
+    data: { role },
+  });
+  return getUserById(employeeId);
+}
+
 async function setUserAccessGrants(userIds, codes) {
   const uniqueUserIds = [...new Set((userIds || []).filter(Boolean))];
   const uniqueCodes = [...new Set((codes || []).filter(Boolean))];
@@ -244,6 +275,18 @@ async function getUserById(id) {
   return authService.sanitizeUser(user);
 }
 
+async function applyDefaultAccessGrantsForApprovedUser(userId, userType) {
+  const {
+    DEFAULT_PERMISSIONS_COMPANY,
+    DEFAULT_PERMISSIONS_SERVICE_CENTER,
+  } = require('../../permissions/constants');
+  const codes =
+    userType === 'ServiceCenter'
+      ? [...DEFAULT_PERMISSIONS_SERVICE_CENTER]
+      : [...DEFAULT_PERMISSIONS_COMPANY];
+  if (codes.length) await setUserAccessGrants([userId], codes);
+}
+
 async function createUser(data) {
   const passwordHash = await authService.hashPassword(data.password);
   const user = await prisma.user.create({
@@ -260,6 +303,7 @@ async function createUser(data) {
       locationId: data.locationId || null,
       supervisorId: data.supervisorId || null,
       serviceCenterId: data.serviceCenterId || null,
+      /** false = pending HR (public sign-up) or explicitly inactive; default true for admin-created users */
       isActive: data.isActive !== false,
       isHr: data.isHr === true,
     },
@@ -267,11 +311,65 @@ async function createUser(data) {
   return authService.sanitizeUser(user);
 }
 
+/**
+ * Public sign-up: supervisors at a work location (active Company role Supervisor).
+ */
+async function listSupervisorsForEmployeeSignup(locationId) {
+  if (!locationId || typeof locationId !== 'string') return [];
+  return prisma.user.findMany({
+    where: {
+      isDeleted: false,
+      isActive: true,
+      isSuperAdmin: false,
+      userType: 'Company',
+      role: 'Supervisor',
+      locationId,
+    },
+    orderBy: [{ fullName: 'asc' }],
+    select: { id: true, fullName: true, fullNameAr: true, email: true },
+  });
+}
+
 async function registerEmployee(data) {
+  if (data.supervisorId) {
+    const sup = await prisma.user.findFirst({
+      where: {
+        id: data.supervisorId,
+        isDeleted: false,
+        isActive: true,
+        userType: 'Company',
+        role: 'Supervisor',
+        locationId: data.locationId,
+      },
+      select: { id: true },
+    });
+    if (!sup) {
+      const err = new Error('Invalid supervisor for the selected location');
+      err.code = 'INVALID_SUPERVISOR';
+      throw err;
+    }
+  }
+  if (data.shiftId && data.locationId) {
+    const shift = await prisma.shift.findUnique({
+      where: { id: data.shiftId },
+      select: { id: true, locationId: true, isForEmployee: true },
+    });
+    if (!shift || !shift.isForEmployee) {
+      const err = new Error('Invalid shift');
+      err.code = 'INVALID_SHIFT';
+      throw err;
+    }
+    if (shift.locationId != null && shift.locationId !== data.locationId) {
+      const err = new Error('Shift does not match selected work location');
+      err.code = 'INVALID_SHIFT_FOR_LOCATION';
+      throw err;
+    }
+  }
   return createUser({
     ...data,
     userType: 'Company',
     role: 'EmpRead',
+    isActive: false,
     locationId: data.locationId,
     shiftId: data.shiftId,
     supervisorId: data.supervisorId || null,
@@ -298,12 +396,150 @@ async function registerServiceCenter(data) {
   return createUser({
     ...data,
     userType: 'ServiceCenter',
-    role: 'Supervisor',
+    role: 'EmpRead',
+    isActive: false,
     locationId: null,
     shiftId: null,
     supervisorId: null,
     serviceCenterId: center.id,
   });
+}
+
+/**
+ * Pending self-service registrations for HR (Company → all Company pending; ServiceCenter → same center only).
+ */
+async function listPendingRegistrations(hrUser) {
+  const where = {
+    isDeleted: false,
+    isActive: false,
+    isSuperAdmin: false,
+  };
+  if (hrUser.userType === 'Company') {
+    where.userType = 'Company';
+  } else if (hrUser.userType === 'ServiceCenter') {
+    where.userType = 'ServiceCenter';
+    where.serviceCenterId = hrUser.serviceCenterId;
+  } else {
+    return [];
+  }
+  return prisma.user.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    select: {
+      ...USER_SELECT,
+      serviceCenter: { select: { id: true, code: true, name: true, nameAr: true } },
+    },
+  });
+}
+
+/**
+ * Approve a pending user: set role, allow login, apply default portal access grants.
+ */
+async function approvePendingUser(actor, targetId, role) {
+  const validRoles = ['Supervisor', 'EmpRead', 'EmpManage'];
+  if (!validRoles.includes(role)) {
+    const err = new Error('Invalid role');
+    err.code = 'INVALID_ROLE';
+    throw err;
+  }
+  const target = await prisma.user.findFirst({
+    where: { id: targetId, isDeleted: false },
+  });
+  if (!target) {
+    const err = new Error('User not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  if (target.isActive) {
+    const err = new Error('User is already active');
+    err.code = 'ALREADY_APPROVED';
+    throw err;
+  }
+  if (actor.userType === 'Company') {
+    if (target.userType !== 'Company') {
+      const err = new Error('Not in scope');
+      err.code = 'OUT_OF_SCOPE';
+      throw err;
+    }
+  } else if (actor.userType === 'ServiceCenter') {
+    if (target.userType !== 'ServiceCenter' || target.serviceCenterId !== actor.serviceCenterId) {
+      const err = new Error('Not in scope');
+      err.code = 'OUT_OF_SCOPE';
+      throw err;
+    }
+  } else {
+    const err = new Error('Not in scope');
+    err.code = 'OUT_OF_SCOPE';
+    throw err;
+  }
+
+  await prisma.user.update({
+    where: { id: targetId },
+    data: { isActive: true, role },
+  });
+  await applyDefaultAccessGrantsForApprovedUser(targetId, target.userType);
+  return getUserById(targetId);
+}
+
+/**
+ * Pending company users who selected this supervisor at sign-up (supervisorId = supervisor's id).
+ */
+async function listPendingRegistrationsForSupervisor(supervisorId) {
+  return prisma.user.findMany({
+    where: {
+      isDeleted: false,
+      isActive: false,
+      isSuperAdmin: false,
+      userType: 'Company',
+      supervisorId,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      ...USER_SELECT,
+    },
+  });
+}
+
+/**
+ * Supervisor approves only a direct report (same rules as HR approve, scoped by supervisorId).
+ */
+async function approvePendingUserForSupervisor(actor, targetId, role) {
+  if (actor.userType !== 'Company' || actor.role !== 'Supervisor') {
+    const err = new Error('Supervisor access required');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+  const validRoles = ['EmpRead', 'EmpManage'];
+  if (!validRoles.includes(role)) {
+    const err = new Error('Invalid role');
+    err.code = 'INVALID_ROLE';
+    throw err;
+  }
+  const target = await prisma.user.findFirst({
+    where: { id: targetId, isDeleted: false },
+  });
+  if (!target) {
+    const err = new Error('User not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  if (target.isActive) {
+    const err = new Error('User is already active');
+    err.code = 'ALREADY_APPROVED';
+    throw err;
+  }
+  if (target.userType !== 'Company' || target.supervisorId !== actor.id) {
+    const err = new Error('Not in scope');
+    err.code = 'OUT_OF_SCOPE';
+    throw err;
+  }
+
+  await prisma.user.update({
+    where: { id: targetId },
+    data: { isActive: true, role },
+  });
+  await applyDefaultAccessGrantsForApprovedUser(targetId, target.userType);
+  return getUserById(targetId);
 }
 
 async function updateUser(id, data) {
@@ -371,7 +607,12 @@ module.exports = {
   getUserById,
   createUser,
   registerEmployee,
+  listSupervisorsForEmployeeSignup,
   registerServiceCenter,
+  listPendingRegistrations,
+  approvePendingUser,
+  listPendingRegistrationsForSupervisor,
+  approvePendingUserForSupervisor,
   updateUser,
   softDeleteUser,
   changePassword,
@@ -381,5 +622,6 @@ module.exports = {
   bulkAssignSupervisor,
   getSupervisorsTree,
   getMyEmployees,
+  updateMyEmployeeRole,
   bumpTokenVersion,
 };

@@ -3,10 +3,12 @@ const shiftService = require('../services/shiftService');
 async function list(req, res, next) {
   try {
     const isForEmployee = req.query.isForEmployee;
+    const locationId = req.query.locationId;
     const options = {};
     if (isForEmployee !== undefined) {
       options.isForEmployee = isForEmployee === 'true' || isForEmployee === true;
     }
+    if (locationId) options.locationId = locationId;
     const shifts = await shiftService.getShifts(options);
     return res.json(shifts);
   } catch (err) {
@@ -29,6 +31,7 @@ async function create(req, res, next) {
     const shift = await shiftService.createShift(req.body);
     return res.status(201).json(shift);
   } catch (err) {
+    if (err.code === 'INVALID_SHIFT_LOCATION') return res.status(400).json({ error: err.message });
     if (err.message && err.message.includes('Invalid time')) {
       return res.status(400).json({ error: err.message });
     }
@@ -42,6 +45,7 @@ async function update(req, res, next) {
     if (!shift) return res.status(404).json({ error: 'Shift not found' });
     return res.json(shift);
   } catch (err) {
+    if (err.code === 'INVALID_SHIFT_LOCATION') return res.status(400).json({ error: err.message });
     if (err.message && err.message.includes('Invalid time')) {
       return res.status(400).json({ error: err.message });
     }

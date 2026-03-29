@@ -17,6 +17,8 @@ function handleValidationErrors(req, res, next) {
 
 const userTypeValues = Object.values(UserType);
 const roleValues = Object.values(Role);
+/** Roles a company supervisor may assign (not Supervisor). */
+const supervisorAssignableRoles = ['EmpRead', 'EmpManage'];
 
 const createUser = [
   body('fullName').trim().notEmpty().withMessage('fullName is required'),
@@ -194,6 +196,29 @@ const setAccessGrants = [
   body('codes.*').isString().withMessage('Each code must be a string'),
 ];
 
+const approvePendingUser = [
+  ...userIdParam,
+  body('role').isIn(roleValues).withMessage(`role must be one of: ${roleValues.join(', ')}`),
+];
+
+const patchMyEmployeeRole = [
+  ...userIdParam,
+  body('role')
+    .isIn(supervisorAssignableRoles)
+    .withMessage(`role must be one of: ${supervisorAssignableRoles.join(', ')}`),
+];
+
+const approveSupervisorPendingUser = [
+  ...userIdParam,
+  body('role')
+    .isIn(supervisorAssignableRoles)
+    .withMessage(`role must be one of: ${supervisorAssignableRoles.join(', ')}`),
+];
+
+const getSignupSupervisorsQuery = [
+  query('locationId').isUUID().withMessage('locationId must be a valid UUID'),
+];
+
 module.exports = {
   handleValidationErrors,
   createUser,
@@ -209,4 +234,8 @@ module.exports = {
   bulkAssignSupervisor,
   getSupervisorsTreeQuery,
   getMyEmployeesQuery,
+  approvePendingUser,
+  approveSupervisorPendingUser,
+  patchMyEmployeeRole,
+  getSignupSupervisorsQuery,
 };

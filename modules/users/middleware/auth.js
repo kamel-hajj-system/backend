@@ -51,7 +51,10 @@ function requireAuth(req, res, next) {
         return res.status(401).json({ error: 'User not found or inactive' });
       }
       if (!user.isActive) {
-        return res.status(403).json({ error: 'Account is deactivated' });
+        return res.status(403).json({
+          error: 'Account is not active. Contact HR or your administrator if you need access.',
+          code: 'ACCOUNT_INACTIVE',
+        });
       }
       if ((decoded.tv ?? 0) !== (user.tokenVersion ?? 0)) {
         return res.status(401).json({ error: 'Session expired. Please login again.' });

@@ -91,10 +91,42 @@ async function listHrAttendance(req, res, next) {
   }
 }
 
+async function listSupervisorAttendance(req, res, next) {
+  try {
+    const {
+      page,
+      limit,
+      dateFrom,
+      dateTo,
+      shiftId,
+      locationId,
+      q,
+      hasCheckIn,
+      hasCheckOut,
+    } = req.query || {};
+    const result = await attendanceService.listHrAttendance({
+      page,
+      limit,
+      dateFrom,
+      dateTo,
+      shiftId,
+      locationId,
+      q,
+      hasCheckIn,
+      hasCheckOut,
+      supervisorId: req.user.id,
+    });
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getStatus,
   checkIn,
   checkOut,
   listHrAttendance,
+  listSupervisorAttendance,
 };
 

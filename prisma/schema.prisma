@@ -38,6 +38,7 @@ model Shift_Location {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   users  User[]
+  shifts Shift[]
 
   @@map("shift_locations")
 }
@@ -49,12 +50,16 @@ model Shift {
   startTime      DateTime @map("start_time") @db.Time
   endTime        DateTime @map("end_time") @db.Time
   isForEmployee  Boolean  @default(true) @map("is_for_employee")
+  /// When set, shift is offered only for this work location (sign-up / filters). Null = all locations (legacy).
+  locationId     String?  @map("location_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
+  shiftLocation      Shift_Location? @relation(fields: [locationId], references: [id])
   users              User[]
   attendanceRecords  AttendanceRecord[]
 
+  @@index([locationId])
   @@map("shifts")
 }
 
@@ -74,6 +79,7 @@ model ServiceCenter {
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   nationalities ServiceCenterNationality[]
+  users         User[]
 
   @@map("service_centers")
 }
@@ -145,6 +151,7 @@ model User {
   shiftLocation   Shift_Location? @relation(fields: [locationId], references: [id])
   supervisor       User?    @relation("UserSupervisor", fields: [supervisorId], references: [id])
   subordinates     User[]   @relation("UserSupervisor")
+  serviceCenter    ServiceCenter? @relation(fields: [serviceCenterId], references: [id])
 
   accessGrants     AccessGrant[]
   attendanceRecords AttendanceRecord[]

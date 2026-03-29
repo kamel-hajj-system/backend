@@ -25,6 +25,10 @@ const {
   bulkAssignSupervisor,
   getSupervisorsTreeQuery,
   getMyEmployeesQuery,
+  approvePendingUser,
+  approveSupervisorPendingUser,
+  patchMyEmployeeRole,
+  getSignupSupervisorsQuery,
 } = require('../validations/userValidations');
 
 const router = express.Router();
@@ -44,6 +48,15 @@ router.post(
   loginLimiter, sensitiveLimiter,
   registerServiceCenter, handleValidationErrors,
   controller.registerServiceCenter
+);
+
+/** Public: supervisors at a work location (employee sign-up dropdown). */
+router.get(
+  '/users/register/supervisors',
+  loginLimiter,
+  getSignupSupervisorsQuery,
+  handleValidationErrors,
+  controller.listSupervisorsForSignup
 );
 
 router.get('/users/me', requireAuth, controller.getMe);
@@ -91,6 +104,22 @@ router.post(
 
 // HR views / editing (any HR user can view; only Supervisor/EmpManage can edit)
 router.get(
+  '/hr/pending-registrations',
+  requireAuth,
+  requireHr,
+  controller.listPendingRegistrations
+);
+router.post(
+  '/hr/users/:id/approve',
+  requireAuth,
+  requireHrCanEdit,
+  sensitiveLimiter,
+  approvePendingUser,
+  handleValidationErrors,
+  controller.approvePendingUser
+);
+
+router.get(
   '/hr/users',
   requireAuth,
   requireHr,
@@ -136,6 +165,31 @@ router.get(
   getMyEmployeesQuery,
   handleValidationErrors,
   controller.getMyEmployees
+);
+router.patch(
+  '/portal/company/my-employees/:id',
+  requireAuth,
+  requireCompanySupervisor,
+  sensitiveLimiter,
+  patchMyEmployeeRole,
+  handleValidationErrors,
+  controller.patchMyEmployeeRole
+);
+
+router.get(
+  '/portal/company/supervisor/pending-registrations',
+  requireAuth,
+  requireCompanySupervisor,
+  controller.listSupervisorPendingRegistrations
+);
+router.post(
+  '/portal/company/supervisor/users/:id/approve',
+  requireAuth,
+  requireCompanySupervisor,
+  sensitiveLimiter,
+  approveSupervisorPendingUser,
+  handleValidationErrors,
+  controller.approveSupervisorPendingUser
 );
 
 module.exports = router;

@@ -13,6 +13,13 @@ async function login(req, res, next) {
     if (!result) {
       result = await authService.authenticate(email, password);
     }
+    if (result?.pendingApproval) {
+      return res.status(403).json({
+        error:
+          'Your account is not active. If you just registered, wait until HR activates it; otherwise contact your administrator.',
+        code: 'ACCOUNT_INACTIVE',
+      });
+    }
     if (!result) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -109,6 +116,20 @@ async function registerEmployee(req, res, next) {
     return res.status(201).json(user);
   } catch (err) {
     if (err.code === 'P2002') return res.status(409).json({ error: 'Email already in use' });
+    if (err.code === 'INVALID_SUPERVISOR') return res.status(400).json({ error: err.message });
+    if (err.code === 'INVALID_SHIFT' || err.code === 'INVALID_SHIFT_FOR_LOCATION') {
+      return res.status(400).json({ error: err.message, code: err.code });
+    }
+    next(err);
+  }
+}
+
+async function listSupervisorsForSignup(req, res, next) {
+  try {
+    const { locationId } = req.query || {};
+    const data = await userService.listSupervisorsForEmployeeSignup(locationId);
+    return res.json({ data });
+  } catch (err) {
     next(err);
   }
 }
@@ -237,12 +258,72 @@ async function getMyEmployees(req, res, next) {
   }
 }
 
+async function patchMyEmployeeRole(req, res, next) {
+  try {
+    const { role } = req.body || {};
+    const user = await userService.updateMyEmployeeRole(req.user.id, req.params.id, role);
+    return res.json(user);
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: err.message });
+    if (err.code === 'INVALID_ROLE') return res.status(400).json({ error: err.message, code: err.code });
+    next(err);
+  }
+}
+
+async function listPendingRegistrations(req, res, next) {
+  try {
+    const list = await userService.listPendingRegistrations(req.user);
+    return res.json({ data: list });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function approvePendingUser(req, res, next) {
+  try {
+    const { role } = req.body || {};
+    const user = await userService.approvePendingUser(req.user, req.params.id, role);
+    return res.json(user);
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: err.message });
+    if (err.code === 'OUT_OF_SCOPE' || err.code === 'ALREADY_APPROVED' || err.code === 'INVALID_ROLE') {
+      return res.status(400).json({ error: err.message, code: err.code });
+    }
+    next(err);
+  }
+}
+
+async function listSupervisorPendingRegistrations(req, res, next) {
+  try {
+    const list = await userService.listPendingRegistrationsForSupervisor(req.user.id);
+    return res.json({ data: list });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function approveSupervisorPendingUser(req, res, next) {
+  try {
+    const { role } = req.body || {};
+    const user = await userService.approvePendingUserForSupervisor(req.user, req.params.id, role);
+    return res.json(user);
+  } catch (err) {
+    if (err.code === 'FORBIDDEN') return res.status(403).json({ error: err.message });
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: err.message });
+    if (err.code === 'OUT_OF_SCOPE' || err.code === 'ALREADY_APPROVED' || err.code === 'INVALID_ROLE') {
+      return res.status(400).json({ error: err.message, code: err.code });
+    }
+    next(err);
+  }
+}
+
 module.exports = {
   login,
   logout,
   refresh,
   getMe,
   registerEmployee,
+  listSupervisorsForSignup,
   registerServiceCenter,
   getUsers,
   getUserById,
@@ -256,4 +337,9 @@ module.exports = {
   bulkAssignSupervisor,
   getSupervisorsTree,
   getMyEmployees,
+  patchMyEmployeeRole,
+  listPendingRegistrations,
+  approvePendingUser,
+  listSupervisorPendingRegistrations,
+  approveSupervisorPendingUser,
 };

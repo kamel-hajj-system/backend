@@ -56,11 +56,15 @@ async function findByEmail(email) {
  */
 async function authenticate(email, password) {
   const user = await findByEmail(email);
-  if (!user || user.isDeleted || !user.isActive) {
+  if (!user || user.isDeleted) {
     return null;
   }
   const valid = await comparePassword(password, user.passwordHash);
   if (!valid) return null;
+  /** Password OK but account not active (pending HR or deactivated). */
+  if (!user.isActive) {
+    return { pendingApproval: true };
+  }
   const token = generateToken(user);
   const refresh = await createRefreshSession(user.id);
   return { user: sanitizeUser(user), token, refreshToken: refresh.token, refreshExpiresAt: refresh.expiresAt };
@@ -121,7 +125,21 @@ async function rotateRefreshToken(token) {
   const tokenHash = hashRefreshToken(token);
   const session = await prisma.refreshSession.findFirst({
     where: { tokenHash, revokedAt: null, expiresAt: { gt: new Date() } },
-    select: { id: true, userId: true, user: { select: { id: true, isDeleted: true, isActive: true, tokenVersion: true, email: true, role: true, isSuperAdmin: true } } },
+    select: {
+      id: true,
+      userId: true,
+      user: {
+        select: {
+          id: true,
+          isDeleted: true,
+          isActive: true,
+          tokenVersion: true,
+          email: true,
+          role: true,
+          isSuperAdmin: true,
+        },
+      },
+    },
   });
   if (!session?.user || session.user.isDeleted || !session.user.isActive) return null;
   const accessToken = generateToken(session.user);
