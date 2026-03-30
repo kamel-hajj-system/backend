@@ -418,6 +418,9 @@ async function listHrAttendance(options = {}) {
             userType: true,
             locationId: true,
             shiftLocation: { select: { id: true, name: true, locationAr: true } },
+            supervisor: {
+              select: { id: true, fullName: true, fullNameAr: true, email: true, phone: true, role: true },
+            },
           },
         },
       },

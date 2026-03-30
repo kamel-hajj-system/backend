@@ -23,10 +23,9 @@ const createServiceCenter = [
   body('presidentName').optional().trim(),
   body('vicePresidentName').optional().trim(),
   body('maxCapacity').optional().isInt({ min: 0 }).withMessage('maxCapacity must be a non-negative integer'),
-  body('nationalities').optional().isArray(),
-  body('nationalities.*.pilgrimNationalityId').optional().isUUID(),
-  body('nationalities.*.pilgrimsCount').optional().isInt({ min: 0 }),
-  body('nationalities.*.arrivingPilgrimsCount').optional().isInt({ min: 0 }),
+  body('companies').optional().isArray(),
+  body('companies.*.pilgrimCompanyId').optional().isUUID(),
+  body('companies.*.allocatedPilgrims').optional().isInt({ min: 0 }),
 ];
 
 const optionalNonNegIntOrNull = (field) =>
@@ -46,10 +45,9 @@ const updateServiceCenter = [
   body('presidentName').optional().trim(),
   body('vicePresidentName').optional().trim(),
   optionalNonNegIntOrNull('maxCapacity'),
-  body('nationalities').optional().isArray(),
-  body('nationalities.*.pilgrimNationalityId').optional().isUUID(),
-  body('nationalities.*.pilgrimsCount').optional().isInt({ min: 0 }),
-  body('nationalities.*.arrivingPilgrimsCount').optional().isInt({ min: 0 }),
+  body('companies').optional().isArray(),
+  body('companies.*.pilgrimCompanyId').optional().isUUID(),
+  body('companies.*.allocatedPilgrims').optional().isInt({ min: 0 }),
 ];
 
 const createPilgrimNationality = [
@@ -58,8 +56,6 @@ const createPilgrimNationality = [
   body('code').optional().trim(),
   body('flagCode').optional().trim().isLength({ max: 32 }).withMessage('flagCode is too long'),
   body('notes').optional().trim(),
-  body('totalPilgrimsCount').optional({ values: 'null' }).isInt({ min: 0 }),
-  body('totalArrivingPilgrimsCount').optional({ values: 'null' }).isInt({ min: 0 }),
 ];
 
 const updatePilgrimNationality = [
@@ -69,8 +65,29 @@ const updatePilgrimNationality = [
   body('code').optional().trim(),
   body('flagCode').optional().trim().isLength({ max: 32 }).withMessage('flagCode is too long'),
   body('notes').optional().trim(),
-  body('totalPilgrimsCount').optional({ values: 'null' }).isInt({ min: 0 }),
-  body('totalArrivingPilgrimsCount').optional({ values: 'null' }).isInt({ min: 0 }),
+];
+
+const createPilgrimCompany = [
+  body('externalCode').trim().notEmpty().withMessage('externalCode is required'),
+  body('name').trim().notEmpty().withMessage('name is required'),
+  body('nameAr').optional().trim(),
+  body('notes').optional().trim(),
+  body('expectedPilgrimsCount').isInt({ min: 0 }).withMessage('expectedPilgrimsCount is required'),
+  body('mergedActualPilgrimsCount').optional({ values: 'null' }).isInt({ min: 0 }),
+  body('nationalityIds').optional().isArray(),
+  body('nationalityIds.*').optional().isUUID(),
+];
+
+const updatePilgrimCompany = [
+  param('id').isUUID().withMessage('Invalid id'),
+  body('externalCode').optional().trim().notEmpty(),
+  body('name').optional().trim().notEmpty(),
+  body('nameAr').optional().trim(),
+  body('notes').optional().trim(),
+  body('expectedPilgrimsCount').optional().isInt({ min: 0 }),
+  body('mergedActualPilgrimsCount').optional({ values: 'null' }).isInt({ min: 0 }),
+  body('nationalityIds').optional().isArray(),
+  body('nationalityIds.*').optional().isUUID(),
 ];
 
 module.exports = {
@@ -80,4 +97,6 @@ module.exports = {
   updateServiceCenter,
   createPilgrimNationality,
   updatePilgrimNationality,
+  createPilgrimCompany,
+  updatePilgrimCompany,
 };

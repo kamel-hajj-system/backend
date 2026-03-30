@@ -78,51 +78,73 @@ model ServiceCenter {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  nationalities ServiceCenterNationality[]
-  users         User[]
+  pilgrimCompanyAllocations ServiceCenterPilgrimCompany[]
+  users                     User[]
 
   @@map("service_centers")
 }
 
-/// Reference list for pilgrim nationalities. Totals are national-level targets; per–service-center caps/arrivals live on ServiceCenterNationality.
+model PilgrimCompany {
+  id                        String   @id @default(uuid()) @db.Uuid
+  externalCode              String   @unique @map("external_code")
+  name                      String
+  nameAr                    String?  @map("name_ar")
+  expectedPilgrimsCount     Int      @map("expected_pilgrims_count")
+  mergedActualPilgrimsCount Int?     @map("merged_actual_pilgrims_count")
+  notes                     String?
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  nationalities      PilgrimCompanyNationality[]
+  serviceCenterLinks ServiceCenterPilgrimCompany[]
+
+  @@map("pilgrim_companies")
+}
+
+model PilgrimCompanyNationality {
+  id                   String   @id @default(uuid()) @db.Uuid
+  pilgrimCompanyId     String   @map("pilgrim_company_id") @db.Uuid
+  pilgrimNationalityId String   @map("pilgrim_nationality_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  pilgrimCompany PilgrimCompany    @relation(fields: [pilgrimCompanyId], references: [id], onDelete: Cascade)
+  nationality    PilgrimNationality @relation(fields: [pilgrimNationalityId], references: [id], onDelete: Cascade)
+
+  @@unique([pilgrimCompanyId, pilgrimNationalityId])
+  @@index([pilgrimNationalityId])
+  @@map("pilgrim_company_nationalities")
+}
+
+model ServiceCenterPilgrimCompany {
+  id                String   @id @default(uuid()) @db.Uuid
+  serviceCenterId   String   @map("service_center_id") @db.Uuid
+  pilgrimCompanyId  String   @map("pilgrim_company_id") @db.Uuid
+  allocatedPilgrims Int      @default(0) @map("allocated_pilgrims")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  serviceCenter  ServiceCenter  @relation(fields: [serviceCenterId], references: [id], onDelete: Cascade)
+  pilgrimCompany PilgrimCompany @relation(fields: [pilgrimCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceCenterId, pilgrimCompanyId])
+  @@index([serviceCenterId])
+  @@index([pilgrimCompanyId])
+  @@map("service_center_pilgrim_companies")
+}
+
 model PilgrimNationality {
   id        String   @id @default(uuid()) @db.Uuid
-  /// Internal / display code (number or string). Not used for flag images.
   code      String?  @unique
-  /// ISO 3166-1 alpha-2 (SA) or common alpha-3 (SAU) for flag SVGs in the portal.
   flagCode  String?  @map("flag_code") @db.VarChar(32)
   name      String
   nameAr    String?  @map("name_ar")
   notes     String?
-  /// Total pilgrim count for this nationality (e.g. 300).
-  totalPilgrimsCount         Int?     @map("total_pilgrims_count")
-  /// Total arriving pilgrims for this nationality (national-level figure; can mirror sum of centers).
-  totalArrivingPilgrimsCount Int?     @map("total_arriving_pilgrims_count")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  serviceCenterLinks ServiceCenterNationality[]
+  companyLinks PilgrimCompanyNationality[]
 
   @@map("pilgrim_nationalities")
-}
-
-/// Per–service-center stats per nationality (many nationalities per center).
-model ServiceCenterNationality {
-  id                    String   @id @default(uuid()) @db.Uuid
-  serviceCenterId       String   @map("service_center_id") @db.Uuid
-  pilgrimNationalityId  String   @map("pilgrim_nationality_id") @db.Uuid
-  pilgrimsCount         Int      @default(0) @map("pilgrims_count")
-  arrivingPilgrimsCount Int      @default(0) @map("arriving_pilgrims_count")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
-
-  serviceCenter ServiceCenter    @relation(fields: [serviceCenterId], references: [id], onDelete: Cascade)
-  nationality   PilgrimNationality @relation(fields: [pilgrimNationalityId], references: [id], onDelete: Cascade)
-
-  @@unique([serviceCenterId, pilgrimNationalityId])
-  @@index([serviceCenterId])
-  @@index([pilgrimNationalityId])
-  @@map("service_center_nationalities")
 }
 
 model User {

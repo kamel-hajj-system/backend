@@ -1,5 +1,4 @@
 const { prisma } = require('../../users/models');
-const pilgrimNationalityService = require('./pilgrimNationalityService');
 
 const USER_LIST_SELECT = {
   id: true,
@@ -15,8 +14,8 @@ const USER_LIST_SELECT = {
 };
 
 const centerInclude = {
-  nationalities: {
-    include: { nationality: true },
+  pilgrimCompanyAllocations: {
+    include: { pilgrimCompany: true },
     orderBy: { createdAt: 'asc' },
   },
 };
@@ -29,9 +28,8 @@ function autoCenterDisplayNames(code) {
   };
 }
 
-/** Sum of pilgrimsCount across nationality rows for one center. */
 function sumAllocatedFromRows(rows) {
-  return (rows || []).reduce((s, n) => s + (Number.isFinite(n.pilgrimsCount) ? n.pilgrimsCount : 0), 0);
+  return (rows || []).reduce((s, n) => s + (Number.isFinite(n.allocatedPilgrims) ? n.allocatedPilgrims : 0), 0);
 }
 
 /**
@@ -45,7 +43,7 @@ function assertAllocatedWithinMaxCapacity(maxCapacity, allocatedSum) {
   if (!Number.isFinite(cap) || cap < 0) return;
   if (allocatedSum > cap) {
     const err = new Error(
-      `Total pilgrims assigned across nationalities (${allocatedSum}) exceeds this center's maximum capacity (${cap}). Reduce the allocations or increase max capacity.`
+      `Total pilgrims allocated across pilgrim companies (${allocatedSum}) exceeds this center's maximum capacity (${cap}). Reduce allocations or increase max capacity.`
     );
     err.code = 'CAPACITY_EXCEEDED';
     err.details = { allocatedSum, maxCapacity: cap };
@@ -104,80 +102,26 @@ async function getById(id) {
   return withCount;
 }
 
-function normalizeNationalityRows(rows) {
+function normalizeCompanyRows(rows) {
   if (!Array.isArray(rows)) return [];
   return rows
-    .filter((r) => r && r.pilgrimNationalityId)
+    .filter((r) => r && r.pilgrimCompanyId)
     .map((r) => ({
-      pilgrimNationalityId: r.pilgrimNationalityId,
-      pilgrimsCount: Number.isFinite(r.pilgrimsCount) ? r.pilgrimsCount : 0,
-      arrivingPilgrimsCount: Number.isFinite(r.arrivingPilgrimsCount) ? r.arrivingPilgrimsCount : 0,
+      pilgrimCompanyId: r.pilgrimCompanyId,
+      allocatedPilgrims: Number.isFinite(r.allocatedPilgrims) ? r.allocatedPilgrims : 0,
     }));
 }
 
-/**
- * @param {string|null} serviceCenterId  null when creating a new center
- * @param {ReturnType<typeof normalizeNationalityRows>} rows
- */
-async function assertCenterNationalityBusinessRules(serviceCenterId, rows) {
-  const normalized = normalizeNationalityRows(rows);
+async function assertCenterCompanyBusinessRules(rows) {
+  const normalized = normalizeCompanyRows(rows);
   const seen = new Set();
   for (const row of normalized) {
-    if (seen.has(row.pilgrimNationalityId)) {
-      const err = new Error('Each nationality can only appear once per service center.');
-      err.code = 'DUPLICATE_NATIONALITY_IN_CENTER';
+    if (seen.has(row.pilgrimCompanyId)) {
+      const err = new Error('Each pilgrim company can only appear once per service center.');
+      err.code = 'DUPLICATE_PILGRIM_COMPANY_IN_CENTER';
       throw err;
     }
-    seen.add(row.pilgrimNationalityId);
-    if (row.arrivingPilgrimsCount > row.pilgrimsCount) {
-      const err = new Error(
-        'Arriving pilgrims cannot be greater than allocated pilgrims for the same nationality row.'
-      );
-      err.code = 'ARRIVING_EXCEEDS_ALLOCATED_ROW';
-      err.details = {
-        pilgrimNationalityId: row.pilgrimNationalityId,
-        pilgrimsCount: row.pilgrimsCount,
-        arrivingPilgrimsCount: row.arrivingPilgrimsCount,
-      };
-      throw err;
-    }
-  }
-  if (!normalized.length) return;
-
-  const metaRows = await prisma.pilgrimNationality.findMany({
-    where: { id: { in: [...seen] } },
-    select: { id: true, name: true, totalPilgrimsCount: true },
-  });
-  const metaMap = Object.fromEntries(metaRows.map((m) => [m.id, m]));
-
-  for (const row of normalized) {
-    const meta = metaMap[row.pilgrimNationalityId];
-    const total = meta?.totalPilgrimsCount;
-    if (total == null || !Number.isFinite(Number(total))) continue;
-    const cap = Number(total);
-    const where = { pilgrimNationalityId: row.pilgrimNationalityId };
-    if (serviceCenterId) {
-      where.serviceCenterId = { not: serviceCenterId };
-    }
-    const { _sum } = await prisma.serviceCenterNationality.aggregate({
-      where,
-      _sum: { pilgrimsCount: true },
-    });
-    const allocatedAtOtherCenters = _sum.pilgrimsCount ?? 0;
-    if (allocatedAtOtherCenters + row.pilgrimsCount > cap) {
-      const err = new Error(
-        `For nationality "${meta.name}", other centers already have ${allocatedAtOtherCenters} pilgrims allocated; this row adds ${row.pilgrimsCount}, but the national total is ${cap}. Reduce allocations or raise the nationality total.`
-      );
-      err.code = 'NATIONALITY_ALLOCATION_EXCEEDED';
-      err.details = {
-        nationalityId: row.pilgrimNationalityId,
-        nationalityName: meta.name,
-        nationalTotal: cap,
-        allocatedAtOtherCenters,
-        requestedForThisCenter: row.pilgrimsCount,
-      };
-      throw err;
-    }
+    seen.add(row.pilgrimCompanyId);
   }
 }
 
@@ -189,20 +133,20 @@ async function create(data) {
     throw err;
   }
 
-  const nationalities = normalizeNationalityRows(data.nationalities);
-  if (nationalities.length) {
-    const ids = [...new Set(nationalities.map((n) => n.pilgrimNationalityId))];
-    const found = await prisma.pilgrimNationality.count({ where: { id: { in: ids } } });
+  const companies = normalizeCompanyRows(data.companies);
+  if (companies.length) {
+    const ids = [...new Set(companies.map((n) => n.pilgrimCompanyId))];
+    const found = await prisma.pilgrimCompany.count({ where: { id: { in: ids } } });
     if (found !== ids.length) {
-      const err = new Error('One or more pilgrim nationality ids are invalid');
-      err.code = 'INVALID_NATIONALITY';
+      const err = new Error('One or more pilgrim company ids are invalid');
+      err.code = 'INVALID_PILGRIM_COMPANY';
       throw err;
     }
   }
 
   const maxCap = data.maxCapacity !== undefined && data.maxCapacity !== null ? data.maxCapacity : null;
-  assertAllocatedWithinMaxCapacity(maxCap, sumAllocatedFromRows(nationalities));
-  await assertCenterNationalityBusinessRules(null, nationalities);
+  assertAllocatedWithinMaxCapacity(maxCap, sumAllocatedFromRows(companies));
+  await assertCenterCompanyBusinessRules(companies);
 
   const { name: autoName, nameAr: autoNameAr } = autoCenterDisplayNames(code);
 
@@ -214,26 +158,18 @@ async function create(data) {
       presidentName: data.presidentName?.trim() || null,
       vicePresidentName: data.vicePresidentName?.trim() || null,
       maxCapacity: data.maxCapacity ?? null,
-      nationalities:
-        nationalities.length > 0
+      pilgrimCompanyAllocations:
+        companies.length > 0
           ? {
-              create: nationalities.map((n) => ({
-                pilgrimNationalityId: n.pilgrimNationalityId,
-                pilgrimsCount: n.pilgrimsCount,
-                arrivingPilgrimsCount: n.arrivingPilgrimsCount,
+              create: companies.map((n) => ({
+                pilgrimCompanyId: n.pilgrimCompanyId,
+                allocatedPilgrims: n.allocatedPilgrims,
               })),
             }
           : undefined,
     },
     include: centerInclude,
   });
-
-  if (nationalities.length) {
-    await pilgrimNationalityService.syncArrivingTotalsForNationalityIds(
-      nationalities.map((n) => n.pilgrimNationalityId)
-    );
-  }
-
   return created;
 }
 
@@ -241,43 +177,32 @@ async function update(id, data) {
   const existing = await prisma.serviceCenter.findUnique({ where: { id } });
   if (!existing) return null;
 
-  const nationalities = data.nationalities !== undefined ? normalizeNationalityRows(data.nationalities) : undefined;
-  if (nationalities && nationalities.length) {
-    const ids = [...new Set(nationalities.map((n) => n.pilgrimNationalityId))];
-    const found = await prisma.pilgrimNationality.count({ where: { id: { in: ids } } });
+  const companies = data.companies !== undefined ? normalizeCompanyRows(data.companies) : undefined;
+  if (companies && companies.length) {
+    const ids = [...new Set(companies.map((n) => n.pilgrimCompanyId))];
+    const found = await prisma.pilgrimCompany.count({ where: { id: { in: ids } } });
     if (found !== ids.length) {
-      const err = new Error('One or more pilgrim nationality ids are invalid');
-      err.code = 'INVALID_NATIONALITY';
+      const err = new Error('One or more pilgrim company ids are invalid');
+      err.code = 'INVALID_PILGRIM_COMPANY';
       throw err;
     }
-  }
-
-  let nationalityIdsToSyncAfterUpdate = [];
-  if (nationalities !== undefined) {
-    const previousLinks = await prisma.serviceCenterNationality.findMany({
-      where: { serviceCenterId: id },
-      select: { pilgrimNationalityId: true },
-    });
-    const previousIds = previousLinks.map((l) => l.pilgrimNationalityId);
-    const nextIds = nationalities.map((n) => n.pilgrimNationalityId);
-    nationalityIdsToSyncAfterUpdate = [...new Set([...previousIds, ...nextIds])];
   }
 
   const nextMaxCapacity =
     data.maxCapacity !== undefined ? data.maxCapacity : existing.maxCapacity;
   let allocatedSumForCapacity;
-  if (nationalities !== undefined) {
-    allocatedSumForCapacity = sumAllocatedFromRows(nationalities);
+  if (companies !== undefined) {
+    allocatedSumForCapacity = sumAllocatedFromRows(companies);
   } else {
-    const { _sum } = await prisma.serviceCenterNationality.aggregate({
+    const { _sum } = await prisma.serviceCenterPilgrimCompany.aggregate({
       where: { serviceCenterId: id },
-      _sum: { pilgrimsCount: true },
+      _sum: { allocatedPilgrims: true },
     });
-    allocatedSumForCapacity = _sum.pilgrimsCount ?? 0;
+    allocatedSumForCapacity = _sum.allocatedPilgrims ?? 0;
   }
   assertAllocatedWithinMaxCapacity(nextMaxCapacity, allocatedSumForCapacity);
-  if (nationalities !== undefined) {
-    await assertCenterNationalityBusinessRules(id, nationalities);
+  if (companies !== undefined) {
+    await assertCenterCompanyBusinessRules(companies);
   }
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -302,15 +227,14 @@ async function update(id, data) {
 
     await tx.serviceCenter.update({ where: { id }, data: payload });
 
-    if (nationalities !== undefined) {
-      await tx.serviceCenterNationality.deleteMany({ where: { serviceCenterId: id } });
-      if (nationalities.length) {
-        await tx.serviceCenterNationality.createMany({
-          data: nationalities.map((n) => ({
+    if (companies !== undefined) {
+      await tx.serviceCenterPilgrimCompany.deleteMany({ where: { serviceCenterId: id } });
+      if (companies.length) {
+        await tx.serviceCenterPilgrimCompany.createMany({
+          data: companies.map((n) => ({
             serviceCenterId: id,
-            pilgrimNationalityId: n.pilgrimNationalityId,
-            pilgrimsCount: n.pilgrimsCount,
-            arrivingPilgrimsCount: n.arrivingPilgrimsCount,
+            pilgrimCompanyId: n.pilgrimCompanyId,
+            allocatedPilgrims: n.allocatedPilgrims,
           })),
         });
       }
@@ -322,22 +246,12 @@ async function update(id, data) {
     });
   });
 
-  if (nationalityIdsToSyncAfterUpdate.length) {
-    await pilgrimNationalityService.syncArrivingTotalsForNationalityIds(nationalityIdsToSyncAfterUpdate);
-  }
-
   return updated;
 }
 
 async function remove(id) {
   const existing = await prisma.serviceCenter.findUnique({ where: { id } });
   if (!existing) return false;
-
-  const linksBefore = await prisma.serviceCenterNationality.findMany({
-    where: { serviceCenterId: id },
-    select: { pilgrimNationalityId: true },
-  });
-  const affectedNationalityIds = [...new Set(linksBefore.map((l) => l.pilgrimNationalityId))];
 
   await prisma.$transaction([
     prisma.user.updateMany({
@@ -346,10 +260,6 @@ async function remove(id) {
     }),
     prisma.serviceCenter.delete({ where: { id } }),
   ]);
-
-  if (affectedNationalityIds.length) {
-    await pilgrimNationalityService.syncArrivingTotalsForNationalityIds(affectedNationalityIds);
-  }
 
   return true;
 }
@@ -367,9 +277,9 @@ async function listForReceptionOverview() {
   const centers = await prisma.serviceCenter.findMany({
     orderBy: [{ code: 'asc' }, { createdAt: 'desc' }],
     include: {
-      nationalities: {
+      pilgrimCompanyAllocations: {
         include: {
-          nationality: { select: { id: true, code: true, flagCode: true, name: true, nameAr: true } },
+          pilgrimCompany: { select: { id: true, externalCode: true, name: true, nameAr: true, mergedActualPilgrimsCount: true } },
         },
         orderBy: { createdAt: 'asc' },
       },
@@ -378,13 +288,13 @@ async function listForReceptionOverview() {
 
   return centers.map((c) => {
     let totalAllocated = 0;
-    let totalArrived = 0;
-    for (const l of c.nationalities || []) {
-      totalAllocated += l.pilgrimsCount ?? 0;
-      totalArrived += l.arrivingPilgrimsCount ?? 0;
+    let totalIntegrated = 0;
+    for (const l of c.pilgrimCompanyAllocations || []) {
+      totalAllocated += l.allocatedPilgrims ?? 0;
+      totalIntegrated += l.pilgrimCompany?.mergedActualPilgrimsCount ?? 0;
     }
-    const arrivedPercent =
-      totalAllocated > 0 ? Math.min(100, Math.round((totalArrived / totalAllocated) * 100)) : 0;
+    const integratedPercent =
+      totalAllocated > 0 ? Math.min(100, Math.round((totalIntegrated / totalAllocated) * 100)) : 0;
     return {
       id: c.id,
       code: c.code,
@@ -392,60 +302,72 @@ async function listForReceptionOverview() {
       nameAr: c.nameAr,
       maxCapacity: c.maxCapacity,
       totalAllocated,
-      totalArrived,
-      arrivedPercent,
-      nationalities: (c.nationalities || []).map((l) => ({
-        id: l.nationality?.id,
-        code: l.nationality?.code,
-        flagCode: l.nationality?.flagCode,
-        name: l.nationality?.name,
-        nameAr: l.nationality?.nameAr,
+      totalIntegrated,
+      integratedPercent,
+      companies: (c.pilgrimCompanyAllocations || []).map((l) => ({
+        id: l.pilgrimCompany?.id,
+        externalCode: l.pilgrimCompany?.externalCode,
+        name: l.pilgrimCompany?.name,
+        nameAr: l.pilgrimCompany?.nameAr,
+        allocatedPilgrims: l.allocatedPilgrims ?? 0,
+        mergedActualPilgrimsCount: l.pilgrimCompany?.mergedActualPilgrimsCount ?? 0,
       })),
     };
   });
 }
 
-/**
- * Reception: aggregate allocated / arrived pilgrims per nationality across all service centers.
- */
-async function listForReceptionNationalitiesOverview() {
-  const [allNationalities, grouped] = await Promise.all([
-    prisma.pilgrimNationality.findMany({
-      select: { id: true, code: true, flagCode: true, name: true, nameAr: true },
-      orderBy: [{ name: 'asc' }],
-    }),
-    prisma.serviceCenterNationality.groupBy({
-      by: ['pilgrimNationalityId'],
-      _sum: {
-        pilgrimsCount: true,
-        arrivingPilgrimsCount: true,
+/** Reception dashboard: all pilgrim companies with center allocation aggregates (read-only). */
+async function listForReceptionPilgrimCompaniesOverview() {
+  const companies = await prisma.pilgrimCompany.findMany({
+    orderBy: [{ externalCode: 'asc' }, { createdAt: 'desc' }],
+    include: {
+      serviceCenterLinks: {
+        include: {
+          serviceCenter: { select: { id: true, code: true, name: true, nameAr: true } },
+        },
+        orderBy: { createdAt: 'asc' },
       },
-    }),
-  ]);
-
-  const sums = new Map(
-    grouped.map((g) => [
-      g.pilgrimNationalityId,
-      {
-        alloc: g._sum.pilgrimsCount ?? 0,
-        arr: g._sum.arrivingPilgrimsCount ?? 0,
+      nationalities: {
+        include: { nationality: { select: { id: true, code: true, flagCode: true, name: true, nameAr: true } } },
+        orderBy: { createdAt: 'asc' },
       },
-    ])
-  );
+    },
+  });
 
-  return allNationalities.map((n) => {
-    const s = sums.get(n.id) || { alloc: 0, arr: 0 };
-    const arrivedPercent =
-      s.alloc > 0 ? Math.min(100, Math.round((s.arr / s.alloc) * 100)) : 0;
+  return companies.map((c) => {
+    const allocatedAcrossCenters = (c.serviceCenterLinks || []).reduce(
+      (s, l) => s + (l.allocatedPilgrims ?? 0),
+      0
+    );
+    const matched = c.mergedActualPilgrimsCount ?? 0;
+    const matchedPercent =
+      c.expectedPilgrimsCount > 0
+        ? Math.min(100, Math.round((matched / c.expectedPilgrimsCount) * 100))
+        : 0;
+
     return {
-      id: n.id,
-      code: n.code,
-      flagCode: n.flagCode,
-      name: n.name,
-      nameAr: n.nameAr,
-      totalAllocated: s.alloc,
-      totalArrived: s.arr,
-      arrivedPercent,
+      id: c.id,
+      externalCode: c.externalCode,
+      name: c.name,
+      nameAr: c.nameAr,
+      expectedPilgrimsCount: c.expectedPilgrimsCount,
+      mergedActualPilgrimsCount: c.mergedActualPilgrimsCount,
+      allocatedAcrossCenters,
+      matchedPercent,
+      centers: (c.serviceCenterLinks || []).map((l) => ({
+        id: l.serviceCenter?.id,
+        code: l.serviceCenter?.code,
+        name: l.serviceCenter?.name,
+        nameAr: l.serviceCenter?.nameAr,
+        allocatedPilgrims: l.allocatedPilgrims ?? 0,
+      })),
+      nationalities: (c.nationalities || []).map((n) => ({
+        id: n.nationality?.id,
+        code: n.nationality?.code,
+        flagCode: n.nationality?.flagCode,
+        name: n.nationality?.name,
+        nameAr: n.nationality?.nameAr,
+      })),
     };
   });
 }
@@ -459,5 +381,5 @@ module.exports = {
   remove,
   listUsersForCenter,
   listForReceptionOverview,
-  listForReceptionNationalitiesOverview,
+  listForReceptionPilgrimCompaniesOverview,
 };

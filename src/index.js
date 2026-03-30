@@ -36,6 +36,24 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 
 /**
+ * Clickjacking mitigation: forbid embedding this site in iframes unless configured.
+ * - Default: no framing (strongest). Override with CSP_FRAME_ANCESTORS, e.g. `'self'` if you embed your own UI.
+ */
+app.use((req, res, next) => {
+  const ancestors =
+    process.env.CSP_FRAME_ANCESTORS && String(process.env.CSP_FRAME_ANCESTORS).trim()
+      ? String(process.env.CSP_FRAME_ANCESTORS).trim()
+      : "'none'";
+  res.setHeader('Content-Security-Policy', `frame-ancestors ${ancestors}`);
+  if (ancestors === "'none'" || ancestors === 'none') {
+    res.setHeader('X-Frame-Options', 'DENY');
+  } else if (ancestors === "'self'" || ancestors === 'self') {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  }
+  next();
+});
+
+/**
  * Reverse proxies (Dokploy, Traefik, Nginx) send X-Forwarded-For.
  * express-rate-limit requires trust proxy to be set when that header is present (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR).
  * - Production: trust 1 hop by default (set TRUST_PROXY=0 to disable).

@@ -1,5 +1,6 @@
 const serviceCenterService = require('../services/serviceCenterService');
 const pilgrimNationalityService = require('../services/pilgrimNationalityService');
+const pilgrimCompanyService = require('../services/pilgrimCompanyService');
 
 function validationError(res, err) {
   return res.status(400).json({
@@ -11,15 +12,10 @@ function validationError(res, err) {
 
 const SERVICE_CENTER_BUSINESS_CODES = new Set([
   'CAPACITY_EXCEEDED',
-  'DUPLICATE_NATIONALITY_IN_CENTER',
-  'ARRIVING_EXCEEDS_ALLOCATED_ROW',
-  'NATIONALITY_ALLOCATION_EXCEEDED',
+  'DUPLICATE_PILGRIM_COMPANY_IN_CENTER',
 ]);
 
-const PILGRIM_NATIONALITY_BUSINESS_CODES = new Set([
-  'TOTAL_ARRIVING_EXCEEDS_TOTAL_PILGRIMS',
-  'NATIONALITY_TOTAL_BELOW_ALLOCATED',
-]);
+const PILGRIM_NATIONALITY_BUSINESS_CODES = new Set([]);
 
 // ——— Service centers ———
 
@@ -60,7 +56,7 @@ async function createCenter(req, res, next) {
     if (err.code === 'P2002') {
       return res.status(409).json({ error: 'This center code is already in use' });
     }
-    if (err.code === 'INVALID_NATIONALITY' || err.code === 'CODE_REQUIRED') {
+    if (err.code === 'INVALID_PILGRIM_COMPANY' || err.code === 'CODE_REQUIRED') {
       return res.status(400).json({ error: err.message });
     }
     if (SERVICE_CENTER_BUSINESS_CODES.has(err.code)) {
@@ -79,7 +75,7 @@ async function updateCenter(req, res, next) {
     if (err.code === 'P2002') {
       return res.status(409).json({ error: 'This center code is already in use' });
     }
-    if (err.code === 'INVALID_NATIONALITY' || err.code === 'CODE_REQUIRED') {
+    if (err.code === 'INVALID_PILGRIM_COMPANY' || err.code === 'CODE_REQUIRED') {
       return res.status(400).json({ error: err.message });
     }
     if (SERVICE_CENTER_BUSINESS_CODES.has(err.code)) {
@@ -138,10 +134,10 @@ async function listReceptionCenterUsers(req, res, next) {
   }
 }
 
-/** Reception: nationalities with totals across all centers (read-only). */
-async function listReceptionNationalitiesOverview(req, res, next) {
+/** Reception: read-only pilgrim companies overview. */
+async function listReceptionPilgrimCompaniesOverview(req, res, next) {
   try {
-    const rows = await serviceCenterService.listForReceptionNationalitiesOverview();
+    const rows = await serviceCenterService.listForReceptionPilgrimCompaniesOverview();
     return res.json(rows);
   } catch (err) {
     next(err);
@@ -159,30 +155,11 @@ async function listNationalities(req, res, next) {
   }
 }
 
-async function syncAllNationalityArrivingTotals(req, res, next) {
-  try {
-    const result = await pilgrimNationalityService.syncAllArrivingTotalsFromLinks();
-    return res.json(result);
-  } catch (err) {
-    next(err);
-  }
-}
-
 async function getNationality(req, res, next) {
   try {
     const row = await pilgrimNationalityService.getById(req.params.id);
     if (!row) return res.status(404).json({ error: 'Nationality not found' });
     return res.json(row);
-  } catch (err) {
-    next(err);
-  }
-}
-
-async function getNationalityOverview(req, res, next) {
-  try {
-    const overview = await pilgrimNationalityService.getOverview(req.params.id);
-    if (!overview) return res.status(404).json({ error: 'Nationality not found' });
-    return res.json(overview);
   } catch (err) {
     next(err);
   }
@@ -229,6 +206,68 @@ async function deleteNationality(req, res, next) {
   }
 }
 
+// ——— Pilgrim companies ———
+
+async function listPilgrimCompanies(req, res, next) {
+  try {
+    const rows = await pilgrimCompanyService.list();
+    return res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getPilgrimCompany(req, res, next) {
+  try {
+    const row = await pilgrimCompanyService.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Pilgrim company not found' });
+    return res.json(row);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createPilgrimCompany(req, res, next) {
+  try {
+    const row = await pilgrimCompanyService.create(req.body);
+    return res.status(201).json(row);
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'External code must be unique' });
+    }
+    if (err.code === 'INVALID_NATIONALITY' || err.code === 'REQUIRED_FIELDS') {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+}
+
+async function updatePilgrimCompany(req, res, next) {
+  try {
+    const row = await pilgrimCompanyService.update(req.params.id, req.body);
+    if (!row) return res.status(404).json({ error: 'Pilgrim company not found' });
+    return res.json(row);
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'External code must be unique' });
+    }
+    if (err.code === 'INVALID_NATIONALITY' || err.code === 'REQUIRED_FIELDS') {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+}
+
+async function deletePilgrimCompany(req, res, next) {
+  try {
+    const ok = await pilgrimCompanyService.remove(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Pilgrim company not found' });
+    return res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listPublicCatalog,
   listCenters,
@@ -239,12 +278,15 @@ module.exports = {
   listCenterUsers,
   listReceptionOverview,
   listReceptionCenterUsers,
-  listReceptionNationalitiesOverview,
+  listReceptionPilgrimCompaniesOverview,
   listNationalities,
-  syncAllNationalityArrivingTotals,
   getNationality,
-  getNationalityOverview,
   createNationality,
   updateNationality,
   deleteNationality,
+  listPilgrimCompanies,
+  getPilgrimCompany,
+  createPilgrimCompany,
+  updatePilgrimCompany,
+  deletePilgrimCompany,
 };

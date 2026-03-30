@@ -8,6 +8,8 @@ const {
   updateServiceCenter,
   createPilgrimNationality,
   updatePilgrimNationality,
+  createPilgrimCompany,
+  updatePilgrimCompany,
 } = require('../validations/serviceCenterValidations');
 
 const router = express.Router();
@@ -31,29 +33,13 @@ router.get(
   controller.listReceptionCenterUsers
 );
 router.get(
-  '/reception/nationalities-overview',
+  '/reception/pilgrim-companies-overview',
   requireAuth,
-  requireAccessCode(['reception.dashboard', 'reception.serviceCenters', 'reception.nationalities']),
-  controller.listReceptionNationalitiesOverview
+  requireAccessCode(['reception.dashboard', 'reception.serviceCenters', 'reception.pilgrimCompanies']),
+  controller.listReceptionPilgrimCompaniesOverview
 );
-
 // Pilgrim nationalities (reference data)
 router.get('/pilgrim-nationalities', requireAuth, requireSuperAdmin, controller.listNationalities);
-router.post(
-  '/pilgrim-nationalities/sync-arriving-totals',
-  requireAuth,
-  requireSuperAdmin,
-  sensitiveLimiter,
-  controller.syncAllNationalityArrivingTotals
-);
-router.get(
-  '/pilgrim-nationalities/:id/overview',
-  requireAuth,
-  requireSuperAdmin,
-  uuidParam,
-  handleValidationErrors,
-  controller.getNationalityOverview
-);
 router.get(
   '/pilgrim-nationalities/:id',
   requireAuth,
@@ -88,6 +74,44 @@ router.delete(
   uuidParam,
   handleValidationErrors,
   controller.deleteNationality
+);
+
+// Pilgrim companies
+router.get('/pilgrim-companies', requireAuth, requireSuperAdmin, controller.listPilgrimCompanies);
+router.get(
+  '/pilgrim-companies/:id',
+  requireAuth,
+  requireSuperAdmin,
+  uuidParam,
+  handleValidationErrors,
+  controller.getPilgrimCompany
+);
+router.post(
+  '/pilgrim-companies',
+  requireAuth,
+  requireSuperAdmin,
+  sensitiveLimiter,
+  createPilgrimCompany,
+  handleValidationErrors,
+  controller.createPilgrimCompany
+);
+router.patch(
+  '/pilgrim-companies/:id',
+  requireAuth,
+  requireSuperAdmin,
+  sensitiveLimiter,
+  updatePilgrimCompany,
+  handleValidationErrors,
+  controller.updatePilgrimCompany
+);
+router.delete(
+  '/pilgrim-companies/:id',
+  requireAuth,
+  requireSuperAdmin,
+  sensitiveLimiter,
+  uuidParam,
+  handleValidationErrors,
+  controller.deletePilgrimCompany
 );
 
 // Service centers
