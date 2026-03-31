@@ -124,8 +124,13 @@ app.use((err, req, res, next) => {
   });
 });
 
+/** Must match prisma/migrations; used for P3005 one-time baselining. */
+const PRISMA_BASELINE_MIGRATION = '20250331120000_baseline';
+
 /** Run database/init.sql on startup, then apply Prisma migrations in order (see .cursor/rules/prisma-db-sync.mdc). */
 async function ensureDatabase() {
+  let hasExistingAppTables = false;
+
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     host: process.env.PGHOST,
@@ -140,6 +145,13 @@ async function ensureDatabase() {
     const sql = fs.readFileSync(initPath, 'utf8');
     await pool.query(sql);
     console.log('Database init OK.');
+
+    if (process.env.PRISMA_BASELINE_RESOLVE_ONCE === 'true') {
+      const { rows } = await pool.query(
+        `SELECT 1 AS ok FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users' LIMIT 1`,
+      );
+      hasExistingAppTables = rows.length > 0;
+    }
   } catch (err) {
     console.error('Database init on startup failed:', err.message);
   } finally {
@@ -160,10 +172,38 @@ async function ensureDatabase() {
       return;
     }
 
+    if (process.env.PRISMA_BASELINE_RESOLVE_ONCE === 'true') {
+      if (hasExistingAppTables) {
+        console.log(
+          `[migrate] PRISMA_BASELINE_RESOLVE_ONCE: marking ${PRISMA_BASELINE_MIGRATION} as applied. Remove this env var after one successful deploy.`,
+        );
+        try {
+          execSync(`npx prisma migrate resolve --applied ${PRISMA_BASELINE_MIGRATION}`, {
+            stdio: 'inherit',
+            cwd: backendRoot,
+            env: process.env,
+          });
+        } catch (resolveErr) {
+          console.warn('[migrate] migrate resolve failed (may already be baselined):', resolveErr.message);
+        }
+      } else {
+        console.log(
+          '[migrate] PRISMA_BASELINE_RESOLVE_ONCE set but public.users is missing — fresh DB; skipping resolve.',
+        );
+      }
+    }
+
     execSync(deployCmd, { stdio: 'inherit', cwd: backendRoot, env: process.env });
     console.log('Prisma migrate deploy OK.');
   } catch (err) {
     console.error('Prisma migrate deploy failed:', err.message);
+    console.error(
+      [
+        'If the log mentions P3005 (database schema is not empty):',
+        '  • Dokploy: set PRISMA_BASELINE_RESOLVE_ONCE=true, redeploy once, then remove it; or',
+        `  • Shell (with prod DATABASE_URL): npx prisma migrate resolve --applied ${PRISMA_BASELINE_MIGRATION}`,
+      ].join('\n'),
+    );
     throw err;
   }
 }
