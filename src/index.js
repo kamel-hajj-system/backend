@@ -127,9 +127,31 @@ app.use((err, req, res, next) => {
 /** Must match prisma/migrations; used for P3005 one-time baselining. */
 const PRISMA_BASELINE_MIGRATION = '20250331120000_baseline';
 
+/**
+ * True when this looks like a pre-Migrate database (has app tables) but the baseline row is missing.
+ * Avoids P3005 without manual Dokploy env in the common case. Assumes DB already matches schema.prisma.
+ */
+async function needsAutoBaselineResolve(pool) {
+  const { rows: hasUsers } = await pool.query(
+    `SELECT 1 AS ok FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users' LIMIT 1`,
+  );
+  if (hasUsers.length === 0) return false;
+
+  const { rows: hasMigTable } = await pool.query(
+    `SELECT 1 AS ok FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '_prisma_migrations' LIMIT 1`,
+  );
+  if (hasMigTable.length === 0) return true;
+
+  const { rows: hasBaselineRow } = await pool.query(
+    `SELECT 1 AS ok FROM "_prisma_migrations" WHERE migration_name = $1 LIMIT 1`,
+    [PRISMA_BASELINE_MIGRATION],
+  );
+  return hasBaselineRow.length === 0;
+}
+
 /** Run database/init.sql on startup, then apply Prisma migrations in order (see .cursor/rules/prisma-db-sync.mdc). */
 async function ensureDatabase() {
-  let hasExistingAppTables = false;
+  let shouldResolveBaseline = false;
 
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -146,11 +168,11 @@ async function ensureDatabase() {
     await pool.query(sql);
     console.log('Database init OK.');
 
-    if (process.env.PRISMA_BASELINE_RESOLVE_ONCE === 'true') {
-      const { rows } = await pool.query(
-        `SELECT 1 AS ok FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users' LIMIT 1`,
-      );
-      hasExistingAppTables = rows.length > 0;
+    const skipAuto =
+      process.env.PRISMA_SKIP_AUTO_BASELINE === 'true' ||
+      process.env.PRISMA_SKIP_AUTO_BASELINE === '1';
+    if (!skipAuto) {
+      shouldResolveBaseline = await needsAutoBaselineResolve(pool);
     }
   } catch (err) {
     console.error('Database init on startup failed:', err.message);
@@ -172,24 +194,18 @@ async function ensureDatabase() {
       return;
     }
 
-    if (process.env.PRISMA_BASELINE_RESOLVE_ONCE === 'true') {
-      if (hasExistingAppTables) {
-        console.log(
-          `[migrate] PRISMA_BASELINE_RESOLVE_ONCE: marking ${PRISMA_BASELINE_MIGRATION} as applied. Remove this env var after one successful deploy.`,
-        );
-        try {
-          execSync(`npx prisma migrate resolve --applied ${PRISMA_BASELINE_MIGRATION}`, {
-            stdio: 'inherit',
-            cwd: backendRoot,
-            env: process.env,
-          });
-        } catch (resolveErr) {
-          console.warn('[migrate] migrate resolve failed (may already be baselined):', resolveErr.message);
-        }
-      } else {
-        console.log(
-          '[migrate] PRISMA_BASELINE_RESOLVE_ONCE set but public.users is missing — fresh DB; skipping resolve.',
-        );
+    if (shouldResolveBaseline) {
+      console.log(
+        `[migrate] Existing database without baseline record; marking ${PRISMA_BASELINE_MIGRATION} as applied (avoids P3005).`,
+      );
+      try {
+        execSync(`npx prisma migrate resolve --applied ${PRISMA_BASELINE_MIGRATION}`, {
+          stdio: 'inherit',
+          cwd: backendRoot,
+          env: process.env,
+        });
+      } catch (resolveErr) {
+        console.warn('[migrate] migrate resolve failed:', resolveErr.message);
       }
     }
 
@@ -199,9 +215,9 @@ async function ensureDatabase() {
     console.error('Prisma migrate deploy failed:', err.message);
     console.error(
       [
-        'If the log mentions P3005 (database schema is not empty):',
-        '  • Dokploy: set PRISMA_BASELINE_RESOLVE_ONCE=true, redeploy once, then remove it; or',
-        `  • Shell (with prod DATABASE_URL): npx prisma migrate resolve --applied ${PRISMA_BASELINE_MIGRATION}`,
+        'If the log mentions P3005: DB may not match schema.prisma; align with db push / SQL first.',
+        `Or try: npx prisma migrate resolve --applied ${PRISMA_BASELINE_MIGRATION}`,
+        'To skip auto-baseline (rare): PRISMA_SKIP_AUTO_BASELINE=true',
       ].join('\n'),
     );
     throw err;

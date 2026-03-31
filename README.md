@@ -128,7 +128,7 @@ Steps:
 - Ensure that all required environment variables are configured in your Dokploy environment, including **SUPER_ADMIN_EMAIL** and **SUPER_ADMIN_PASSWORD** (no default in production).
 - **Frontend path:** The backend looks for the built frontend at `<app root>/frontend/dist` (e.g. `/app/frontend/dist`). Build the frontend in your pipeline and copy the `dist` output there, or set `FRONTEND_BUILD_PATH` to a different path.
 - **Database:** Schema changes use **Prisma Migrate**. The app runs `npx prisma migrate deploy` on startup by default (see `PRISMA_MIGRATE_DEPLOY_ON_START`). Commit new folders under `prisma/migrations/` with each schema change.
-- **P3005 / “database schema is not empty”** (DB had tables before Migrate): either (a) set **`PRISMA_BASELINE_RESOLVE_ONCE=true`** in Dokploy, redeploy once so startup records the baseline, **then delete that variable**; or (b) run once in a shell with prod `DATABASE_URL`: `npx prisma migrate resolve --applied 20250331120000_baseline`.
+- **P3005 / “database schema is not empty”**: startup auto-detects an existing app DB (`public.users` exists) without a baseline row in `_prisma_migrations` and runs `migrate resolve` before `deploy`. Disable with **`PRISMA_SKIP_AUTO_BASELINE=true`** only if you know you need manual control. Manual fix: `npx prisma migrate resolve --applied 20250331120000_baseline` (or `npm run db:migrate:baseline-resolve`).
 - For each schema change, update `docs/db-change-plan.md` and follow its checklist.
 - Expose the backend port (default `5000`) from your container.
 
