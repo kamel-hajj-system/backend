@@ -160,22 +160,56 @@ async function getSupervisorsTree(options = {}) {
   }));
 }
 
+/**
+ * Company users this account may treat as "team": direct reports ∪ Super Admin delegated visibility.
+ */
+async function getCompanyTeamUserIds(viewerId) {
+  const [delegatedRows, directEmployees] = await Promise.all([
+    prisma.delegatedEmployeeVisibility.findMany({
+      where: { viewerId },
+      select: { visibleUserId: true },
+    }),
+    prisma.user.findMany({
+      where: {
+        supervisorId: viewerId,
+        isDeleted: false,
+        isSuperAdmin: false,
+        userType: 'Company',
+      },
+      select: { id: true },
+    }),
+  ]);
+  const set = new Set();
+  for (const d of delegatedRows) set.add(d.visibleUserId);
+  for (const d of directEmployees) set.add(d.id);
+  return [...set];
+}
+
 async function getMyEmployees(supervisorId, options = {}) {
   const { q, includeInactive = true } = options;
+  const teamIds = await getCompanyTeamUserIds(supervisorId);
+  if (teamIds.length === 0) {
+    return { data: [], total: 0 };
+  }
+
   const where = {
     isDeleted: false,
     isSuperAdmin: false,
     userType: 'Company',
-    supervisorId,
+    id: { in: teamIds },
   };
   if (!includeInactive) where.isActive = true;
   if (q && String(q).trim() !== '') {
     const term = String(q).trim();
-    where.OR = [
-      { fullName: { contains: term, mode: 'insensitive' } },
-      { fullNameAr: { contains: term, mode: 'insensitive' } },
-      { email: { contains: term, mode: 'insensitive' } },
-      { phone: { contains: term, mode: 'insensitive' } },
+    where.AND = [
+      {
+        OR: [
+          { fullName: { contains: term, mode: 'insensitive' } },
+          { fullNameAr: { contains: term, mode: 'insensitive' } },
+          { email: { contains: term, mode: 'insensitive' } },
+          { phone: { contains: term, mode: 'insensitive' } },
+        ],
+      },
     ];
   }
 
@@ -602,6 +636,78 @@ async function bumpTokenVersion(id) {
   return updated;
 }
 
+const COMPANY_NON_ADMIN_WHERE = {
+  isDeleted: false,
+  isSuperAdmin: false,
+  userType: 'Company',
+};
+
+/**
+ * List delegated visibility grants grouped by viewer (Super Admin).
+ */
+async function listDelegatedVisibilityGrouped() {
+  const rows = await prisma.delegatedEmployeeVisibility.findMany({
+    orderBy: [{ viewerId: 'asc' }, { visibleUserId: 'asc' }],
+    include: {
+      viewer: { select: USER_SELECT },
+      visibleUser: { select: USER_SELECT },
+    },
+  });
+  const byViewer = new Map();
+  for (const row of rows) {
+    if (!byViewer.has(row.viewerId)) {
+      byViewer.set(row.viewerId, { viewer: row.viewer, visibleUsers: [] });
+    }
+    byViewer.get(row.viewerId).visibleUsers.push(row.visibleUser);
+  }
+  return { data: [...byViewer.values()] };
+}
+
+/**
+ * Replace the full visible-user set for one viewer. viewer and all targets must be active Company users (not super admin).
+ */
+async function setDelegatedVisibilityForViewer(viewerId, visibleUserIdsRaw) {
+  const visibleUserIds = [...new Set((visibleUserIdsRaw || []).filter(Boolean))].filter((id) => id !== viewerId);
+
+  const viewer = await prisma.user.findFirst({
+    where: { id: viewerId, ...COMPANY_NON_ADMIN_WHERE },
+    select: { id: true },
+  });
+  if (!viewer) {
+    const err = new Error('Viewer not found or not a valid company user');
+    err.code = 'INVALID_VIEWER';
+    throw err;
+  }
+
+  if (visibleUserIds.length === 0) {
+    await prisma.delegatedEmployeeVisibility.deleteMany({ where: { viewerId } });
+    return { viewerId, visibleUserIds: [], updated: 0 };
+  }
+
+  const targets = await prisma.user.findMany({
+    where: {
+      id: { in: visibleUserIds },
+      ...COMPANY_NON_ADMIN_WHERE,
+    },
+    select: { id: true },
+  });
+  if (targets.length !== visibleUserIds.length) {
+    const err = new Error('One or more visible users are invalid or not company users');
+    err.code = 'INVALID_VISIBLE_USERS';
+    throw err;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.delegatedEmployeeVisibility.deleteMany({ where: { viewerId } });
+    await tx.delegatedEmployeeVisibility.createMany({
+      data: visibleUserIds.map((visibleUserId) => ({ viewerId, visibleUserId })),
+      skipDuplicates: true,
+    });
+  });
+
+  return { viewerId, visibleUserIds, updated: visibleUserIds.length };
+}
+
 module.exports = {
   getUsers,
   getUserById,
@@ -624,4 +730,7 @@ module.exports = {
   getMyEmployees,
   updateMyEmployeeRole,
   bumpTokenVersion,
+  listDelegatedVisibilityGrouped,
+  setDelegatedVisibilityForViewer,
+  getCompanyTeamUserIds,
 };

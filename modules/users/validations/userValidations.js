@@ -36,8 +36,8 @@ const createUser = [
     .isIn(roleValues)
     .withMessage(`role must be one of: ${roleValues.join(', ')}`),
   body('jobTitle').optional().trim(),
-  body('shiftId').optional().isUUID().withMessage('shiftId must be a valid UUID'),
-  body('locationId').optional().isUUID().withMessage('locationId must be a valid UUID'),
+  body('shiftId').optional({ checkFalsy: true }).isUUID().withMessage('shiftId must be a valid UUID'),
+  body('locationId').optional({ checkFalsy: true }).isUUID().withMessage('locationId must be a valid UUID'),
   body('supervisorId')
     .optional()
     .custom((value) => {
@@ -56,6 +56,7 @@ const createUser = [
     })
     .withMessage('serviceCenterId must be a valid UUID or empty'),
   body('isActive').optional().isBoolean().withMessage('isActive must be boolean'),
+  body('isHr').optional().isBoolean().withMessage('isHr must be boolean'),
 ];
 
 const registerEmployee = [
@@ -106,8 +107,8 @@ const updateUser = [
     .isIn(roleValues)
     .withMessage(`role must be one of: ${roleValues.join(', ')}`),
   body('jobTitle').optional().trim(),
-  body('shiftId').optional().isUUID().withMessage('shiftId must be a valid UUID'),
-  body('locationId').optional().isUUID().withMessage('locationId must be a valid UUID'),
+  body('shiftId').optional({ checkFalsy: true }).isUUID().withMessage('shiftId must be a valid UUID'),
+  body('locationId').optional({ checkFalsy: true }).isUUID().withMessage('locationId must be a valid UUID'),
   body('supervisorId')
     .optional()
     .custom((value) => {
@@ -126,6 +127,7 @@ const updateUser = [
     })
     .withMessage('serviceCenterId must be a valid UUID or empty'),
   body('isActive').optional().isBoolean().withMessage('isActive must be boolean'),
+  body('isHr').optional().isBoolean().withMessage('isHr must be boolean'),
 ];
 
 const userIdParam = [
@@ -219,6 +221,16 @@ const getSignupSupervisorsQuery = [
   query('locationId').isUUID().withMessage('locationId must be a valid UUID'),
 ];
 
+const viewerIdParam = [
+  param('viewerId').isUUID().withMessage('viewerId must be a valid UUID'),
+];
+
+const setDelegatedVisibility = [
+  ...viewerIdParam,
+  body('visibleUserIds').isArray().withMessage('visibleUserIds must be an array'),
+  body('visibleUserIds.*').isUUID().withMessage('Each visibleUserId must be a valid UUID'),
+];
+
 module.exports = {
   handleValidationErrors,
   createUser,
@@ -238,4 +250,6 @@ module.exports = {
   approveSupervisorPendingUser,
   patchMyEmployeeRole,
   getSignupSupervisorsQuery,
+  viewerIdParam,
+  setDelegatedVisibility,
 };

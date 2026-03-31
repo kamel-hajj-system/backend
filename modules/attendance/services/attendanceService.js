@@ -344,18 +344,28 @@ async function listHrAttendance(options = {}) {
     hasCheckOut,
     /** If set, only attendance for users with this supervisor (direct reports). */
     supervisorId,
+    /**
+     * If set (array), only attendance for these user ids (e.g. supervisor direct reports ∪ delegated visibility).
+     * When used, `supervisorId` is ignored.
+     */
+    teamUserIds,
   } = options;
+
+  const userScope =
+    Array.isArray(teamUserIds)
+      ? {
+          userType: 'Company',
+          ...(teamUserIds.length === 0 ? { id: { in: [] } } : { id: { in: teamUserIds } }),
+        }
+      : supervisorId
+        ? { supervisorId, userType: 'Company' }
+        : {};
 
   const where = {
     user: {
       isDeleted: false,
       isSuperAdmin: false,
-      ...(supervisorId
-        ? {
-            supervisorId,
-            userType: 'Company',
-          }
-        : {}),
+      ...userScope,
     },
   };
 

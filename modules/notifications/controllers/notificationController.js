@@ -101,7 +101,7 @@ async function supervisorSend(req, res, next) {
     return res.json(result);
   } catch (err) {
     if (err.code === 'INVALID_RECIPIENTS') {
-      return res.status(403).json({ error: 'You can only notify your direct employees.' });
+      return res.status(403).json({ error: 'You can only notify users in your assigned team.' });
     }
     next(err);
   }
@@ -120,7 +120,7 @@ async function supervisorSchedule(req, res, next) {
   } catch (err) {
     if (err.code === 'BAD_SCHEDULE') return res.status(400).json({ error: err.message });
     if (err.code === 'INVALID_RECIPIENTS') {
-      return res.status(403).json({ error: 'You can only schedule for your direct employees.' });
+      return res.status(403).json({ error: 'You can only schedule for users in your assigned team.' });
     }
     next(err);
   }

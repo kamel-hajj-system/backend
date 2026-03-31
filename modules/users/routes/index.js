@@ -6,6 +6,7 @@ const {
   requireHr,
   requireHrCanEdit,
   requireCompanySupervisor,
+  requireCompanySupervisorOrAccessCodes,
   optionalAuth,
   loginLimiter,
   sensitiveLimiter,
@@ -29,6 +30,7 @@ const {
   approveSupervisorPendingUser,
   patchMyEmployeeRole,
   getSignupSupervisorsQuery,
+  setDelegatedVisibility,
 } = require('../validations/userValidations');
 
 const router = express.Router();
@@ -102,6 +104,23 @@ router.post(
   controller.setAccessGrants
 );
 
+// Super Admin: explicit viewer → visible company users (data only; portal enforcement later)
+router.get(
+  '/delegated-employee-visibility',
+  requireAuth,
+  requireSuperAdmin,
+  controller.listDelegatedVisibility
+);
+router.put(
+  '/delegated-employee-visibility/:viewerId',
+  requireAuth,
+  requireSuperAdmin,
+  sensitiveLimiter,
+  setDelegatedVisibility,
+  handleValidationErrors,
+  controller.setDelegatedVisibility
+);
+
 // HR views / editing (any HR user can view; only Supervisor/EmpManage can edit)
 router.get(
   '/hr/pending-registrations',
@@ -157,11 +176,11 @@ router.post(
   controller.hrResetPassword
 );
 
-// Company portal: supervisor can see his employees
+// Company portal: supervisor or delegated team viewer can list team employees (for filters / UI)
 router.get(
   '/portal/company/my-employees',
   requireAuth,
-  requireCompanySupervisor,
+  requireCompanySupervisorOrAccessCodes('portal.company.employees'),
   getMyEmployeesQuery,
   handleValidationErrors,
   controller.getMyEmployees

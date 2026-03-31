@@ -3,7 +3,7 @@ const {
   requireAuth,
   requireSuperAdmin,
   requireHrCanEdit,
-  requireCompanySupervisor,
+  requireCompanySupervisorOrAccessCodes,
   sensitiveLimiter,
 } = require('../../users/middleware');
 const { handleValidationErrors } = require('../../users/validations/userValidations');
@@ -24,11 +24,11 @@ router.delete(
 );
 router.post('/notifications/:id/read', requireAuth, validations.markRead, handleValidationErrors, controller.markRead);
 
-// Company supervisor: notify direct reports only
+// Company supervisor or user with portal.company.send_notifications grant
 router.post(
   '/portal/company/supervisor/notifications/send',
   requireAuth,
-  requireCompanySupervisor,
+  requireCompanySupervisorOrAccessCodes('portal.company.send_notifications'),
   sensitiveLimiter,
   validations.sendToSelectedUsers,
   handleValidationErrors,
@@ -37,7 +37,7 @@ router.post(
 router.post(
   '/portal/company/supervisor/notifications/schedule',
   requireAuth,
-  requireCompanySupervisor,
+  requireCompanySupervisorOrAccessCodes('portal.company.send_notifications'),
   sensitiveLimiter,
   validations.scheduleNotification,
   handleValidationErrors,

@@ -176,6 +176,9 @@ model User {
   serviceCenter    ServiceCenter? @relation(fields: [serviceCenterId], references: [id])
 
   accessGrants     AccessGrant[]
+  /// Explicit Super Admin–assigned visibility: this user may view listed company users (portal; enforcement in later stages).
+  delegatedVisibilityAsViewer  DelegatedEmployeeVisibility[] @relation("DelegatedVisibilityViewer")
+  delegatedVisibilityAsVisible DelegatedEmployeeVisibility[] @relation("DelegatedVisibilityVisible")
   attendanceRecords AttendanceRecord[]
   refreshSessions  RefreshSession[]
   auditLogs        AuditLog[]
@@ -239,6 +242,22 @@ model AccessGrant {
   @@unique([userId, code])
   @@index([code])
   @@map("access_grants")
+}
+
+/// Super Admin assigns which company users (`visibleUserId`) a viewer (`viewerId`) may see (e.g. attendance/team views).
+model DelegatedEmployeeVisibility {
+  id            String   @id @default(uuid()) @db.Uuid
+  viewerId      String   @map("viewer_id") @db.Uuid
+  visibleUserId String   @map("visible_user_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  viewer      User @relation("DelegatedVisibilityViewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  visibleUser User @relation("DelegatedVisibilityVisible", fields: [visibleUserId], references: [id], onDelete: Cascade)
+
+  @@unique([viewerId, visibleUserId])
+  @@index([viewerId])
+  @@index([visibleUserId])
+  @@map("delegated_employee_visibility")
 }
 
 model AttendanceRecord {

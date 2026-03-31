@@ -44,6 +44,7 @@ function requireAuth(req, res, next) {
         shift: { select: { id: true, name: true, shiftAr: true } },
         accessGrants: { select: { code: true } },
         tokenVersion: true,
+        _count: { select: { delegatedVisibilityAsViewer: true } },
       },
     })
     .then((user) => {
@@ -59,8 +60,12 @@ function requireAuth(req, res, next) {
       if ((decoded.tv ?? 0) !== (user.tokenVersion ?? 0)) {
         return res.status(401).json({ error: 'Session expired. Please login again.' });
       }
-      req.user = user;
-      req.user.accessCodes = (user.accessGrants || []).map((g) => g.code).filter(Boolean);
+      const { _count, ...rest } = user;
+      req.user = {
+        ...rest,
+        hasDelegatedTeamAccess: (_count?.delegatedVisibilityAsViewer ?? 0) > 0,
+      };
+      req.user.accessCodes = (rest.accessGrants || []).map((g) => g.code).filter(Boolean);
       req.userId = user.id;
       req.userRole = user.role;
       req.isSuperAdmin = user.isSuperAdmin === true;
@@ -103,6 +108,26 @@ function requireCompanySupervisor(req, res, next) {
     return res.status(403).json({ error: 'Supervisor access required' });
   }
   return next();
+}
+
+/**
+ * Company supervisor, or company user granted at least one of the ACCESS_TREE codes (Super Admin → Access Control).
+ */
+function requireCompanySupervisorOrAccessCodes(...codes) {
+  const list = codes.flat().filter(Boolean);
+  return (req, res, next) => {
+    if (req.user?.userType !== 'Company') {
+      return res.status(403).json({ error: 'Company access required' });
+    }
+    if (req.user?.role === 'Supervisor') {
+      return next();
+    }
+    const granted = req.user?.accessCodes || [];
+    if (list.some((c) => granted.includes(c))) {
+      return next();
+    }
+    return res.status(403).json({ error: 'Access denied' });
+  };
 }
 
 /** Any of the given access grant codes (or Super Admin). */
@@ -172,6 +197,7 @@ module.exports = {
   requireHr,
   requireHrCanEdit,
   requireCompanySupervisor,
+  requireCompanySupervisorOrAccessCodes,
   requireAccessCode,
   requirePermission,
   optionalAuth,

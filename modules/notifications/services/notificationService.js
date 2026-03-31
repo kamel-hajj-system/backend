@@ -1,5 +1,6 @@
 const { prisma } = require('../../users/models');
 const pushService = require('../../push/services/pushService');
+const userService = require('../../users/services/userService');
 
 async function resolveTargetUsers({ userIds = [], userType, locationId, sendToAll = false }) {
   const where = {
@@ -82,9 +83,17 @@ async function sendNotification({ createdById, title, message, userIds, userType
   return sendNotificationToUserIds({ createdById, title, message, userIds: targets });
 }
 
-async function validateSupervisorRecipients(supervisorId, userIds) {
+/** Recipients must be active company users in the sender's team (direct reports ∪ delegated visibility). */
+async function validateSupervisorRecipients(viewerId, userIds) {
   const unique = [...new Set((userIds || []).filter(Boolean))];
   if (unique.length === 0) {
+    const err = new Error('INVALID_RECIPIENTS');
+    err.code = 'INVALID_RECIPIENTS';
+    throw err;
+  }
+  const teamIds = await userService.getCompanyTeamUserIds(viewerId);
+  const allowed = new Set(teamIds);
+  if (unique.some((id) => !allowed.has(id))) {
     const err = new Error('INVALID_RECIPIENTS');
     err.code = 'INVALID_RECIPIENTS';
     throw err;
@@ -92,7 +101,6 @@ async function validateSupervisorRecipients(supervisorId, userIds) {
   const rows = await prisma.user.findMany({
     where: {
       id: { in: unique },
-      supervisorId,
       isDeleted: false,
       isActive: true,
       userType: 'Company',

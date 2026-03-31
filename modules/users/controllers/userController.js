@@ -317,6 +317,36 @@ async function approveSupervisorPendingUser(req, res, next) {
   }
 }
 
+async function listDelegatedVisibility(req, res, next) {
+  try {
+    const result = await userService.listDelegatedVisibilityGrouped();
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setDelegatedVisibility(req, res, next) {
+  try {
+    const { visibleUserIds } = req.body || {};
+    const result = await userService.setDelegatedVisibilityForViewer(req.params.viewerId, visibleUserIds);
+    await logAudit({
+      req,
+      userId: req.user?.id,
+      action: 'delegated_visibility.set',
+      entity: 'user',
+      entityId: req.params.viewerId,
+      meta: { count: result.updated },
+    });
+    return res.json(result);
+  } catch (err) {
+    if (err.code === 'INVALID_VIEWER' || err.code === 'INVALID_VISIBLE_USERS') {
+      return res.status(400).json({ error: err.message, code: err.code });
+    }
+    next(err);
+  }
+}
+
 module.exports = {
   login,
   logout,
@@ -342,4 +372,6 @@ module.exports = {
   approvePendingUser,
   listSupervisorPendingRegistrations,
   approveSupervisorPendingUser,
+  listDelegatedVisibility,
+  setDelegatedVisibility,
 };

@@ -1,4 +1,5 @@
 const attendanceService = require('../services/attendanceService');
+const userService = require('../../users/services/userService');
 
 async function getStatus(req, res, next) {
   try {
@@ -104,6 +105,7 @@ async function listSupervisorAttendance(req, res, next) {
       hasCheckIn,
       hasCheckOut,
     } = req.query || {};
+    const teamUserIds = await userService.getCompanyTeamUserIds(req.user.id);
     const result = await attendanceService.listHrAttendance({
       page,
       limit,
@@ -114,7 +116,7 @@ async function listSupervisorAttendance(req, res, next) {
       q,
       hasCheckIn,
       hasCheckOut,
-      supervisorId: req.user.id,
+      teamUserIds,
     });
     return res.json(result);
   } catch (err) {
