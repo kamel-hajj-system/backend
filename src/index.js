@@ -124,7 +124,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-/** Run database/init.sql on startup, then align DB with prisma/schema via db push (see .cursor/rules/prisma-db-sync.mdc). */
+/** Run database/init.sql on startup, then apply Prisma migrations in order (see .cursor/rules/prisma-db-sync.mdc). */
 async function ensureDatabase() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -148,36 +148,22 @@ async function ensureDatabase() {
   try {
     const { execSync } = require('child_process');
     const backendRoot = path.resolve(__dirname, '..');
-    // Never pass --accept-data-loss unless explicitly opted in (can drop/reset columns).
-    const acceptDataLoss = process.env.PRISMA_DB_PUSH_ACCEPT_DATA_LOSS === 'true';
-    const pushCmd = `npx prisma db push${acceptDataLoss ? ' --accept-data-loss' : ''}`;
+    const deployCmd = 'npx prisma migrate deploy';
+    const skipMigrate =
+      process.env.PRISMA_MIGRATE_DEPLOY_ON_START === 'false' ||
+      process.env.PRISMA_MIGRATE_DEPLOY_ON_START === '0';
 
-    if (process.env.NODE_ENV === 'production') {
-      // Default ON so CI/Dokploy auto-deploys stay aligned with schema (avoids P2021 missing tables).
-      // Opt out only if you manage schema elsewhere: PRISMA_DB_PUSH_ON_START=false
-      const skipPush =
-        process.env.PRISMA_DB_PUSH_ON_START === 'false' ||
-        process.env.PRISMA_DB_PUSH_ON_START === '0';
-      if (skipPush) {
-        console.log(
-          'Skipping Prisma db push on startup (production). PRISMA_DB_PUSH_ON_START is false; run `npx prisma db push` manually after schema changes if needed.',
-        );
-        return;
-      }
-      execSync(pushCmd, { stdio: 'inherit', cwd: backendRoot, env: process.env });
-      console.log('Prisma db push OK (production).');
+    if (skipMigrate) {
+      console.log(
+        'Skipping prisma migrate deploy on startup (PRISMA_MIGRATE_DEPLOY_ON_START is false). Apply migrations manually before serving traffic.',
+      );
       return;
     }
 
-    const devCmd = pushCmd;
-    execSync(devCmd, {
-      stdio: 'inherit',
-      cwd: backendRoot,
-      env: process.env,
-    });
-    console.log('Prisma db push OK (development).');
+    execSync(deployCmd, { stdio: 'inherit', cwd: backendRoot, env: process.env });
+    console.log('Prisma migrate deploy OK.');
   } catch (err) {
-    console.error('Prisma db push failed:', err.message);
+    console.error('Prisma migrate deploy failed:', err.message);
     throw err;
   }
 }

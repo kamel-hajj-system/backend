@@ -127,10 +127,8 @@ Steps:
 
 - Ensure that all required environment variables are configured in your Dokploy environment, including **SUPER_ADMIN_EMAIL** and **SUPER_ADMIN_PASSWORD** (no default in production).
 - **Frontend path:** The backend looks for the built frontend at `<app root>/frontend/dist` (e.g. `/app/frontend/dist`). Build the frontend in your pipeline and copy the `dist` output there, or set `FRONTEND_BUILD_PATH` to a different path.
-- **Database:** This project syncs schema with Prisma using `db push` (not migration deploy by default). After deploying backend changes that touch `prisma/schema.prisma`, run:
-  - `cd /app && npx prisma db push`
-  - then check logs for Prisma errors and test affected endpoints.
-- Keep `PRISMA_DB_PUSH_ACCEPT_DATA_LOSS` unset/false in production. Do not use data-loss mode unless explicitly approved after backup.
+- **Database:** Schema changes use **Prisma Migrate**. The app runs `npx prisma migrate deploy` on startup by default (see `PRISMA_MIGRATE_DEPLOY_ON_START`). Commit new folders under `prisma/migrations/` with each schema change.
+- **Existing production DB** (already had tables before Migrate): run once `npx prisma migrate resolve --applied 20250331120000_baseline` so the baseline is marked applied without re-running its SQL (see `.cursor/rules/prisma-db-sync.mdc`).
 - For each schema change, update `docs/db-change-plan.md` and follow its checklist.
 - Expose the backend port (default `5000`) from your container.
 

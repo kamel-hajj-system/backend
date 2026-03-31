@@ -8,7 +8,7 @@ Shared scripts for database setup and schema sync. Use these so all modules (use
 
 ## Commands (from backend root)
 
-- **npm run db:ensure** – Run `prisma db push` (no data-loss flag by default), then continue.
+- **npm run db:ensure** – Run `prisma migrate deploy` (pending migrations in order), then continue.
 - **npm run db:seed** – Ensure DB schema, then seed the user module (super admin). Safe to run multiple times.
 - **npm run db:setup** – Same as `db:ensure` then `db:seed` (one-shot setup).
 - **npm run db:guard-schema** – Fails if `prisma/schema.prisma` changed without rollout-plan artifacts (`docs/db-change-plan.md` or db SQL/migration files).
@@ -16,7 +16,7 @@ Shared scripts for database setup and schema sync. Use these so all modules (use
 ## Adding a new module with its own tables
 
 1. Add your models in `prisma/schema.prisma`.
-2. Update DB safely with: `npx prisma db push` (against the correct environment).
+2. Create migrations: `npx prisma migrate dev --name description` (see `.cursor/rules/prisma-db-sync.mdc`).
 3. For destructive refactors, use staged rollout (expand -> backfill -> contract) and update `docs/db-change-plan.md`.
 4. If your module has a seed, either:
    - Run it after `runEnsureMigrations()` (see `modules/users/seeds/run-seed.js`), or
@@ -24,5 +24,4 @@ Shared scripts for database setup and schema sync. Use these so all modules (use
 
 ## Safety behavior
 
-- Default behavior does **not** pass `--accept-data-loss`.
-- Only if `PRISMA_DB_PUSH_ACCEPT_DATA_LOSS=true` is explicitly set will Prisma receive the destructive flag.
+- Production applies **committed** migration SQL via `migrate deploy`. Review migration files like code; use backups for risky changes.

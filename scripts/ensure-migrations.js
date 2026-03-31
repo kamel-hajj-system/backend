@@ -1,5 +1,5 @@
 /**
- * Align the database with prisma/schema.prisma (db push). Used before seeding.
+ * Apply pending Prisma migrations (ordered). Used before seeding.
  * Run: npm run db:ensure
  */
 const path = require('path');
@@ -14,13 +14,12 @@ function ensureDatabaseUrl() {
 
 async function runEnsureMigrations() {
   ensureDatabaseUrl();
-  const acceptDataLoss = process.env.PRISMA_DB_PUSH_ACCEPT_DATA_LOSS === 'true';
-  execSync(`npx prisma db push${acceptDataLoss ? ' --accept-data-loss' : ''}`, {
+  execSync('npx prisma migrate deploy', {
     stdio: 'inherit',
     cwd: backendRoot,
     env: process.env,
   });
-  console.log('Prisma db push OK.');
+  console.log('Prisma migrate deploy OK.');
 }
 
 module.exports = { runEnsureMigrations, ensureDatabaseUrl };

@@ -25,7 +25,7 @@ Enterprise-ready user module with authentication, soft delete, audit logs, and a
 
 ## Setup
 
-1. Run migrations: `npm run db:migrate`
+1. Apply migrations: `npm run db:migrate` (`prisma migrate deploy`). To create new migrations after schema edits: `npm run db:migrate:dev`.
 2. Seed super admin: `npm run db:seed` (uses `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` from env; in production set these before seeding).
 
 ## APIs
