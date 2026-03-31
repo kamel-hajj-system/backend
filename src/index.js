@@ -124,7 +124,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-/** Run database/init.sql on startup, then Prisma migrations for user module. */
+/** Run database/init.sql on startup, then align DB with prisma/schema via db push (see .cursor/rules/prisma-db-sync.mdc). */
 async function ensureDatabase() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -145,38 +145,33 @@ async function ensureDatabase() {
   } finally {
     await pool.end();
   }
-  // Ensure Prisma schema is applied (dev: use db push, no migrations)
   try {
     const { execSync } = require('child_process');
-    // In production, do NOT auto-apply schema changes unless explicitly allowed.
-    // This prevents accidental destructive schema changes on boot.
+    const backendRoot = path.resolve(__dirname, '..');
+    // Never pass --accept-data-loss unless explicitly opted in (can drop/reset columns).
+    const acceptDataLoss = process.env.PRISMA_DB_PUSH_ACCEPT_DATA_LOSS === 'true';
+    const pushCmd = `npx prisma db push${acceptDataLoss ? ' --accept-data-loss' : ''}`;
+
     if (process.env.NODE_ENV === 'production') {
       const allowPush = process.env.PRISMA_DB_PUSH_ON_START === 'true';
-      const acceptDataLoss = process.env.PRISMA_DB_PUSH_ACCEPT_DATA_LOSS === 'true';
       if (!allowPush) {
-        console.log('Skipping Prisma db push on startup (production).');
+        console.log(
+          'Skipping Prisma db push on startup (production). Set PRISMA_DB_PUSH_ON_START=true to auto-sync, or run `npx prisma db push` in the container after deploy.',
+        );
         return;
       }
-      const cmd = `npx prisma db push${acceptDataLoss ? ' --accept-data-loss' : ''}`;
-      execSync(cmd, {
-        stdio: 'inherit',
-        cwd: path.resolve(__dirname, '..'),
-        env: process.env,
-      });
-      console.log('Prisma db push OK.');
+      execSync(pushCmd, { stdio: 'inherit', cwd: backendRoot, env: process.env });
+      console.log('Prisma db push OK (production).');
       return;
     }
 
-    // Non-production: Prisma often requires --accept-data-loss for harmless changes (e.g. adding UNIQUE on `code`).
-    // Opt out (stricter): PRISMA_DB_PUSH_ACCEPT_DATA_LOSS=false
-    const devAcceptDataLoss = process.env.PRISMA_DB_PUSH_ACCEPT_DATA_LOSS !== 'false';
-    const devCmd = `npx prisma db push${devAcceptDataLoss ? ' --accept-data-loss' : ''}`;
+    const devCmd = pushCmd;
     execSync(devCmd, {
       stdio: 'inherit',
-      cwd: path.resolve(__dirname, '..'),
+      cwd: backendRoot,
       env: process.env,
     });
-    console.log('Prisma db push OK.');
+    console.log('Prisma db push OK (development).');
   } catch (err) {
     console.error('Prisma db push failed:', err.message);
     throw err;

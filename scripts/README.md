@@ -1,6 +1,6 @@
 # Database scripts
 
-Shared scripts for database setup and migrations. Use these so all modules (users now, others later) behave the same.
+Shared scripts for database setup and schema sync. Use these so all modules (users now, others later) behave the same.
 
 ## Env
 
@@ -8,24 +8,21 @@ Shared scripts for database setup and migrations. Use these so all modules (user
 
 ## Commands (from backend root)
 
-- **npm run db:ensure** – Apply Prisma migrations and self-heal if the user module migration was marked applied but tables are missing (re-applies that migration).
-- **npm run db:seed** – Ensure migrations (with self-heal), then seed the user module (super admin). Safe to run multiple times.
+- **npm run db:ensure** – Run `prisma db push` (no data-loss flag by default), then continue.
+- **npm run db:seed** – Ensure DB schema, then seed the user module (super admin). Safe to run multiple times.
 - **npm run db:setup** – Same as `db:ensure` then `db:seed` (one-shot setup).
+- **npm run db:guard-schema** – Fails if `prisma/schema.prisma` changed without rollout-plan artifacts (`docs/db-change-plan.md` or db SQL/migration files).
 
 ## Adding a new module with its own tables
 
 1. Add your models in `prisma/schema.prisma`.
-2. Create a new migration: `npx prisma migrate dev --name your_module_name`.
-3. Keep migrations **idempotent** where possible (e.g. `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, enum creation in `DO $$ ... EXCEPTION WHEN duplicate_object THEN NULL; END $$`) so re-applying is safe.
+2. Update DB safely with: `npx prisma db push` (against the correct environment).
+3. For destructive refactors, use staged rollout (expand -> backfill -> contract) and update `docs/db-change-plan.md`.
 4. If your module has a seed, either:
    - Run it after `runEnsureMigrations()` (see `modules/users/seeds/run-seed.js`), or
    - Document that users run `npm run db:ensure` (or `db:setup`) first, then your seed.
 
-## Self-heal behavior
+## Safety behavior
 
-If Prisma says “No pending migrations” but the `users` table (or other expected tables) are missing, `db:ensure` and `db:seed` will:
-
-1. Remove that migration’s row from `_prisma_migrations` so Prisma treats it as pending again.
-2. Run `prisma migrate deploy` again so that migration runs and creates the tables.
-
-The user module migration is written to be idempotent so this re-apply does not fail if some objects already exist.
+- Default behavior does **not** pass `--accept-data-loss`.
+- Only if `PRISMA_DB_PUSH_ACCEPT_DATA_LOSS=true` is explicitly set will Prisma receive the destructive flag.

@@ -1,84 +1,33 @@
 /**
- * Ensure Prisma migrations are applied and user module tables exist.
- * Self-heals when migration was marked applied but tables are missing (e.g. different DB).
- * Run from backend dir: node scripts/ensure-migrations.js
- * Or require and call runEnsureMigrations() from seed/other scripts.
+ * Align the database with prisma/schema.prisma (db push). Used before seeding.
+ * Run: npm run db:ensure
  */
 const path = require('path');
 const { execSync } = require('child_process');
 
 const backendRoot = path.resolve(__dirname, '..');
-const USER_MODULE_MIGRATION = '20240314000000_user_module';
 
 function ensureDatabaseUrl() {
   const { ensureDatabaseUrl: load } = require('./lib/db-env.js');
   return load(path.resolve(backendRoot, '.env'));
 }
 
-function runMigrateDeploy() {
-  execSync('npx prisma migrate deploy', {
+async function runEnsureMigrations() {
+  ensureDatabaseUrl();
+  const acceptDataLoss = process.env.PRISMA_DB_PUSH_ACCEPT_DATA_LOSS === 'true';
+  execSync(`npx prisma db push${acceptDataLoss ? ' --accept-data-loss' : ''}`, {
     stdio: 'inherit',
     cwd: backendRoot,
     env: process.env,
   });
+  console.log('Prisma db push OK.');
 }
 
-/**
- * Remove migration record from _prisma_migrations so Prisma will re-run it on next deploy.
- * Use when migration is "applied" but tables are missing (e.g. different DB or partial run).
- */
-async function unrecordMigration(migrationName) {
-  const { PrismaClient } = require('@prisma/client');
-  const prisma = new PrismaClient();
-  try {
-    await prisma.$executeRawUnsafe(
-      'DELETE FROM _prisma_migrations WHERE migration_name = $1',
-      migrationName
-    );
-  } finally {
-    await prisma.$disconnect();
-  }
+module.exports = { runEnsureMigrations, ensureDatabaseUrl };
+
+if (require.main === module) {
+  runEnsureMigrations().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }
-
-/**
- * Returns true if users table exists and is usable.
- */
-async function usersTableExists() {
-  const { PrismaClient } = require('@prisma/client');
-  const prisma = new PrismaClient();
-  try {
-    await prisma.$queryRawUnsafe('SELECT 1 FROM users LIMIT 0');
-    return true;
-  } catch (e) {
-    if (e.code === 'P2021' || (e.message && e.message.includes('does not exist'))) {
-      return false;
-    }
-    throw e;
-  } finally {
-    await prisma.$disconnect();
-  }
-}
-
-/**
- * Ensure migrations applied and user module schema exists. Self-heals if migration
- * was marked applied but tables missing.
- */
-async function runEnsureMigrations() {
-  ensureDatabaseUrl();
-  runMigrateDeploy();
-
-  const exists = await usersTableExists();
-  if (exists) return;
-
-  console.log('User module tables missing despite migration record. Re-applying migration...');
-  await unrecordMigration(USER_MODULE_MIGRATION);
-  runMigrateDeploy();
-
-  const existsNow = await usersTableExists();
-  if (!existsNow) {
-    throw new Error('User module tables still missing after re-apply. Check database and migrations.');
-  }
-  console.log('User module schema applied successfully.');
-}
-
-module.exports = { runEnsureMigrations, ensureDatabaseUrl, usersTableExists };
