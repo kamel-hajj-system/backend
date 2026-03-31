@@ -153,10 +153,14 @@ async function ensureDatabase() {
     const pushCmd = `npx prisma db push${acceptDataLoss ? ' --accept-data-loss' : ''}`;
 
     if (process.env.NODE_ENV === 'production') {
-      const allowPush = process.env.PRISMA_DB_PUSH_ON_START === 'true';
-      if (!allowPush) {
+      // Default ON so CI/Dokploy auto-deploys stay aligned with schema (avoids P2021 missing tables).
+      // Opt out only if you manage schema elsewhere: PRISMA_DB_PUSH_ON_START=false
+      const skipPush =
+        process.env.PRISMA_DB_PUSH_ON_START === 'false' ||
+        process.env.PRISMA_DB_PUSH_ON_START === '0';
+      if (skipPush) {
         console.log(
-          'Skipping Prisma db push on startup (production). Set PRISMA_DB_PUSH_ON_START=true to auto-sync, or run `npx prisma db push` in the container after deploy.',
+          'Skipping Prisma db push on startup (production). PRISMA_DB_PUSH_ON_START is false; run `npx prisma db push` manually after schema changes if needed.',
         );
         return;
       }
