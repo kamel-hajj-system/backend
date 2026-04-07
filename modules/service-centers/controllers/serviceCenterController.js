@@ -144,6 +144,16 @@ async function listReceptionPilgrimCompaniesOverview(req, res, next) {
   }
 }
 
+/** Reception: read-only pilgrim nationalities overview. */
+async function listReceptionNationalitiesOverview(req, res, next) {
+  try {
+    const rows = await serviceCenterService.listForReceptionNationalitiesOverview();
+    return res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ——— Pilgrim nationalities (reference) ———
 
 async function listNationalities(req, res, next) {
@@ -279,6 +289,7 @@ module.exports = {
   listReceptionOverview,
   listReceptionCenterUsers,
   listReceptionPilgrimCompaniesOverview,
+  listReceptionNationalitiesOverview,
   listNationalities,
   getNationality,
   createNationality,

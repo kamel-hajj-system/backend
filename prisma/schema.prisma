@@ -25,6 +25,29 @@ enum NotificationScheduleKind {
   DAILY_RANGE
 }
 
+/// Employee → supervisor approval; HR sees all (read-only).
+enum AttendanceRequestKind {
+  WORK_LOCATION
+  ABSENCE
+}
+
+enum WorkLocationMode {
+  ONLINE
+  HOME
+}
+
+enum AttendanceRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BusMovementReportStatus {
+  PENDING_SUPERVISOR
+  APPROVED_AIRPORT
+  COMPLETED_ADMIN
+}
+
 model Shift_Location {
   id          String   @id @default(uuid()) @db.Uuid
   name        String
@@ -39,6 +62,7 @@ model Shift_Location {
 
   users  User[]
   shifts Shift[]
+  busMovementReports BusMovementReport[]
 
   @@map("shift_locations")
 }
@@ -99,6 +123,103 @@ model PilgrimCompany {
   serviceCenterLinks ServiceCenterPilgrimCompany[]
 
   @@map("pilgrim_companies")
+}
+
+/// One row imported from the public Nusuk (نسك) Google Sheet; `rowData` holds all mapped columns.
+model NusukSheetRow {
+  id              String   @id @default(uuid()) @db.Uuid
+  /// 1-based row number in the published sheet (header is row 1).
+  sheetRowNumber  Int      @map("sheet_row_number")
+  /// اسم الجهة — duplicated for indexing and display.
+  entityName      String   @map("entity_name")
+  /// عدد الحجاج from the sheet (parsed integer when possible).
+  pilgrimsCount   Int?     @map("pilgrims_count")
+  /// Full row as camelCase keys (see NUSK column map in backend).
+  rowData         Json     @map("row_data")
+  /// Normalized «رقم مجموعة الاستعداد المسبق» for uniqueness; null when field absent.
+  preArrivalGroupKey String? @unique @map("pre_arrival_group_key")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  /// Set when a user saves edits from the portal (not set on sheet import-only creates).
+  lastEditedInAppAt DateTime? @map("last_edited_in_app_at")
+  /// هل رحلة الوصول مؤكدة؟ — portal; null = not set
+  arrivalFlightConfirmed Boolean? @map("arrival_flight_confirmed")
+  /// هل الوصول الفعلي مؤكد؟ — `yes` | `no` | `partial`
+  actualArrivalStatus    String?  @map("actual_arrival_status") @db.VarChar(16)
+  /// عدد الوصول الفعلي — optional; may match `pilgrimsCount` or custom
+  actualArrivalCount     Int?     @map("actual_arrival_count")
+  /// ملاحظة مركز الخدمة على هذا السجل (بوابة مركز الخدمة)
+  serviceCenterNote      String?  @map("service_center_note") @db.Text
+
+  editLock NusukSheetRowEditLock?
+
+  @@unique([sheetRowNumber])
+  @@index([entityName])
+  @@map("nusuk_sheet_rows")
+}
+
+/// Pessimistic edit lock: one active editor per Nusuk row (TTL + heartbeat on client).
+model NusukSheetRowEditLock {
+  rowId     String   @id @map("row_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  lockToken String   @unique @map("lock_token") @db.Uuid
+  expiresAt DateTime @map("expires_at")
+
+  row  NusukSheetRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("nusuk_sheet_row_edit_locks")
+}
+
+/// Super Admin–configured public Google Sheet URLs (Pilgrim Company sources; not imported to DB).
+model PilgrimCompanyExternalSheet {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(200)
+  sheetUrl  String   @map("sheet_url") @db.Text
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("pilgrim_company_external_sheets")
+}
+
+/// Singleton (id = "default"): Super Admin–configured Google Sheet CSV URL for Nusuk import.
+model NusukSettings {
+  id          String   @id @default("default")
+  sheetCsvUrl String?  @map("sheet_csv_url") @db.Text
+  /// Super Admin–managed columns config for Reception Nusuk rows page.
+  columnsConfig Json?  @map("columns_config")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("nusuk_settings")
+}
+
+/// Super Admin — portal page `/portal/service-center/pre-arrival` (sections; not Reception Nusuk columns).
+model ServiceCenterPreArrivalSettings {
+  id        String   @id @default("default")
+  /// JSON: { table: { _nusukColumnOrder?, [key]: { visible, labelAr, labelEn } }, ...future sections }
+  config    Json     @default("{}")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("service_center_pre_arrival_settings")
+}
+
+/// Point-in-time copy of `nusuk_sheet_rows` for restore (auto after sync or manual).
+model NusukSyncSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+  /// "auto" after sync, "manual" from Super Admin backup button.
+  kind         String   @default("auto")
+  label        String?
+  sourceUrl    String?  @map("source_url") @db.Text
+  rowCount     Int      @map("row_count")
+  snapshotData Json     @map("snapshot_data")
+  /// +N new rows, etc.
+  meta         Json?
+
+  @@index([createdAt(sort: Desc)])
+  @@map("nusuk_sync_snapshots")
 }
 
 model PilgrimCompanyNationality {
@@ -180,12 +301,18 @@ model User {
   delegatedVisibilityAsViewer  DelegatedEmployeeVisibility[] @relation("DelegatedVisibilityViewer")
   delegatedVisibilityAsVisible DelegatedEmployeeVisibility[] @relation("DelegatedVisibilityVisible")
   attendanceRecords AttendanceRecord[]
+  attendanceRequestsCreated AttendanceRequest[] @relation("AttendanceRequestRequester")
+  attendanceRequestsDecided  AttendanceRequest[] @relation("AttendanceRequestDecider")
   refreshSessions  RefreshSession[]
   auditLogs        AuditLog[]
+  nusukRowEditLocks NusukSheetRowEditLock[]
   createdNotifications Notification[] @relation("NotificationCreator")
   notificationRecipients NotificationRecipient[]
   pushSubscriptions         PushSubscription[]
   scheduledNotifications      ScheduledNotification[]
+  busMovementReportsCreated           BusMovementReport[] @relation("BusMovementReportCreator")
+  busMovementReportsAirportApproved   BusMovementReport[] @relation("BusMovementReportAirportSupervisor")
+  busMovementReportsAdminCompleted    BusMovementReport[] @relation("BusMovementReportAdminSupervisor")
 
   @@index([email])
   @@index([isDeleted, isActive])
@@ -291,7 +418,88 @@ model AttendanceRecord {
   @@unique([userId, shiftStartAt])
   @@index([userId, checkInAt, checkOutAt])
   @@index([shiftId, shiftStartAt])
+  /// Speeds date-range scans when filtering by `shiftStartAt` (e.g. HR lists without shift filter).
+  @@index([shiftStartAt])
   @@map("attendance_records")
+}
+
+model AttendanceRequest {
+  id         String                  @id @default(uuid()) @db.Uuid
+  requesterId String               @map("requester_id") @db.Uuid
+  kind       AttendanceRequestKind
+  status     AttendanceRequestStatus @default(PENDING)
+
+  workLocationMode WorkLocationMode? @map("work_location_mode")
+  effectiveFrom    DateTime?         @map("effective_from") @db.Date
+  effectiveTo      DateTime?         @map("effective_to") @db.Date
+
+  absenceStartDate DateTime? @map("absence_start_date") @db.Date
+  absenceEndDate   DateTime? @map("absence_end_date") @db.Date
+  absenceReason    String?   @map("absence_reason") @db.Text
+
+  attachmentFileName  String? @map("attachment_file_name")
+  attachmentStoredName String? @map("attachment_stored_name")
+
+  employeeNote String? @map("employee_note") @db.Text
+
+  decidedById  String?   @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime? @map("decided_at")
+  decisionNote String?   @map("decision_note") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  requester User  @relation("AttendanceRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  decidedBy User? @relation("AttendanceRequestDecider", fields: [decidedById], references: [id])
+
+  @@index([requesterId, createdAt])
+  @@index([status, createdAt])
+  /// Speeds lookups by requester + kind + status (e.g. batch flags on attendance rows).
+  @@index([requesterId, kind, status])
+  @@map("attendance_requests")
+}
+
+/// بلاغات تحرك الحافلات — airport workflow then admin hospitality fields.
+model BusMovementReport {
+  id          String   @id @default(uuid()) @db.Uuid
+  locationId  String   @map("location_id") @db.Uuid
+  createdById String   @map("created_by_id") @db.Uuid
+
+  companyName       String  @map("company_name") @db.VarChar(500)
+  busNumber         String  @map("bus_number") @db.VarChar(120)
+  pilgrimCountOnBus Int     @map("pilgrim_count_on_bus")
+  nationality       String  @db.VarChar(200)
+  moveFrom          String  @map("move_from") @db.Text
+  moveTo            String  @map("move_to") @db.Text
+  moveTime          String  @map("move_time") @db.VarChar(120)
+
+  status BusMovementReportStatus @default(PENDING_SUPERVISOR)
+
+  airportSupervisorUserId     String?   @map("airport_supervisor_user_id") @db.Uuid
+  airportSupervisorApprovedAt DateTime? @map("airport_supervisor_approved_at")
+
+  hospitalityCenter String? @map("hospitality_center") @db.VarChar(500)
+  housingName       String? @map("housing_name") @db.VarChar(500)
+  passportCount     Int?    @map("passport_count")
+  driverName        String? @map("driver_name") @db.VarChar(200)
+  guideName         String? @map("guide_name") @db.VarChar(200)
+  guidePhone        String? @map("guide_phone") @db.VarChar(50)
+
+  adminSupervisorUserId String?   @map("admin_supervisor_user_id") @db.Uuid
+  adminCompletedAt      DateTime? @map("admin_completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  location          Shift_Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy         User           @relation("BusMovementReportCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  airportSupervisor User?          @relation("BusMovementReportAirportSupervisor", fields: [airportSupervisorUserId], references: [id])
+  adminSupervisor   User?          @relation("BusMovementReportAdminSupervisor", fields: [adminSupervisorUserId], references: [id])
+
+  @@index([locationId, createdAt(sort: Desc)])
+  @@index([locationId, status])
+  @@index([createdById])
+  @@map("bus_movement_reports")
 }
 
 model Notification {

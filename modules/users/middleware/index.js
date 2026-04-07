@@ -7,6 +7,7 @@ const {
   requireCompanySupervisorOrAccessCodes,
   requireAccessCode,
   requirePermission,
+  requireServiceCenterPortal,
   optionalAuth,
 } = require('./auth');
 const { loginLimiter, sensitiveLimiter } = require('./rateLimit');
@@ -20,6 +21,7 @@ module.exports = {
   requireCompanySupervisorOrAccessCodes,
   requireAccessCode,
   requirePermission,
+  requireServiceCenterPortal,
   optionalAuth,
   loginLimiter,
   sensitiveLimiter,

@@ -124,11 +124,25 @@ async function listSupervisorAttendance(req, res, next) {
   }
 }
 
+async function getMyAttendanceChart(req, res, next) {
+  try {
+    if (req.user?.userType !== 'Company') {
+      return res.status(403).json({ error: 'Company portal only' });
+    }
+    const days = req.query?.days !== undefined ? Number(req.query.days) : 14;
+    const data = await attendanceService.getMyAttendanceDaySeries(req.user.id, days);
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getStatus,
   checkIn,
   checkOut,
   listHrAttendance,
   listSupervisorAttendance,
+  getMyAttendanceChart,
 };
 

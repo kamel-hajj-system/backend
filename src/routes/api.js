@@ -9,6 +9,11 @@ const attendanceRoutes = require('../../modules/attendance/routes');
 const notificationRoutes = require('../../modules/notifications/routes');
 const pushRoutes = require('../../modules/push/routes');
 const serviceCenterRoutes = require('../../modules/service-centers/routes');
+const nusukRoutes = require('../../modules/nusuk/routes');
+const nusukAdminRoutes = require('../../modules/nusuk/nusukAdminRoutes');
+const serviceCenterPreArrivalAdminRoutes = require('../../modules/service-center-pre-arrival/serviceCenterPreArrivalAdminRoutes');
+const pilgrimCompanySheetRoutes = require('../../modules/pilgrim-company-sheets/pilgrimCompanySheetRoutes');
+const busMovementReportRoutes = require('../../modules/bus-movement-reports/routes');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -40,5 +45,10 @@ router.use('/', attendanceRoutes);
 router.use('/', notificationRoutes);
 router.use('/', pushRoutes);
 router.use('/', serviceCenterRoutes);
+router.use('/', nusukRoutes);
+router.use('/', nusukAdminRoutes);
+router.use('/', serviceCenterPreArrivalAdminRoutes);
+router.use('/', pilgrimCompanySheetRoutes);
+router.use('/', busMovementReportRoutes);
 
 module.exports = router;

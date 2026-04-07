@@ -31,6 +31,7 @@ const {
   patchMyEmployeeRole,
   getSignupSupervisorsQuery,
   setDelegatedVisibility,
+  activitySummaryDaysQuery,
 } = require('../validations/userValidations');
 
 const router = express.Router();
@@ -62,6 +63,14 @@ router.get(
 );
 
 router.get('/users/me', requireAuth, controller.getMe);
+
+router.get(
+  '/users/me/activity-summary',
+  requireAuth,
+  activitySummaryDaysQuery,
+  handleValidationErrors,
+  controller.getMyActivitySummary
+);
 
 router.get('/users', requireAuth, requireSuperAdmin, getUsersQuery, handleValidationErrors, controller.getUsers);
 
@@ -123,6 +132,12 @@ router.put(
 
 // HR views / editing (any HR user can view; only Supervisor/EmpManage can edit)
 router.get(
+  '/hr/pending-registrations/summary',
+  requireAuth,
+  requireHr,
+  controller.getPendingRegistrationsSummary
+);
+router.get(
   '/hr/pending-registrations',
   requireAuth,
   requireHr,
@@ -146,6 +161,8 @@ router.get(
   handleValidationErrors,
   controller.getUsers
 );
+
+router.get('/hr/dashboard-stats', requireAuth, requireHr, controller.getHrDashboardStats);
 
 // Supervisors tree (HR)
 router.get(
@@ -195,6 +212,12 @@ router.patch(
   controller.patchMyEmployeeRole
 );
 
+router.get(
+  '/portal/company/supervisor/pending-registrations/summary',
+  requireAuth,
+  requireCompanySupervisor,
+  controller.getSupervisorPendingRegistrationsSummary
+);
 router.get(
   '/portal/company/supervisor/pending-registrations',
   requireAuth,

@@ -6,6 +6,7 @@ const sendNotification = [
   body('sendToAll').optional().isBoolean(),
   body('userType').optional().isIn(['Company', 'ServiceCenter']),
   body('locationId').optional({ nullable: true, checkFalsy: true }).isUUID(),
+  body('shiftId').optional({ nullable: true, checkFalsy: true }).isUUID(),
   body('userIds').optional().isArray(),
   body('userIds.*').optional().isUUID(),
 ];

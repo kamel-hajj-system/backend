@@ -1,6 +1,6 @@
 const userService = require('../services/userService');
 const authService = require('../services/authService');
-const { logAudit } = require('../services/auditLogService');
+const { logAudit, getMyActivitySummary: buildMyActivitySummary } = require('../services/auditLogService');
 
 async function login(req, res, next) {
   try {
@@ -53,6 +53,19 @@ async function getMe(req, res) {
   return res.json(req.user);
 }
 
+async function getMyActivitySummary(req, res, next) {
+  try {
+    if (req.user?.userType !== 'Company') {
+      return res.status(403).json({ error: 'Company portal only' });
+    }
+    const days = req.query?.days !== undefined ? Number(req.query.days) : 14;
+    const data = await buildMyActivitySummary(req.user.id, days);
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function refresh(req, res, next) {
   try {
     const token = req.cookies?.kamel_refresh;
@@ -73,10 +86,27 @@ async function refresh(req, res, next) {
   }
 }
 
+async function getHrDashboardStats(req, res, next) {
+  try {
+    const data = await userService.getHrDashboardStats();
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getUsers(req, res, next) {
   try {
-    const { page, limit, isActive, role, locationId, userType, q } = req.query;
-    const options = { page, limit, role, userType, q, locationId: locationId || undefined };
+    const { page, limit, isActive, role, locationId, shiftId, userType, q } = req.query;
+    const options = {
+      page,
+      limit,
+      role,
+      userType,
+      q,
+      locationId: locationId || undefined,
+      shiftId: shiftId || undefined,
+    };
     if (isActive !== undefined) {
       options.isActive = isActive === true || isActive === 'true';
     }
@@ -270,6 +300,15 @@ async function patchMyEmployeeRole(req, res, next) {
   }
 }
 
+async function getPendingRegistrationsSummary(req, res, next) {
+  try {
+    const data = await userService.getPendingRegistrationsSummary(req.user);
+    return res.json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listPendingRegistrations(req, res, next) {
   try {
     const list = await userService.listPendingRegistrations(req.user);
@@ -289,6 +328,15 @@ async function approvePendingUser(req, res, next) {
     if (err.code === 'OUT_OF_SCOPE' || err.code === 'ALREADY_APPROVED' || err.code === 'INVALID_ROLE') {
       return res.status(400).json({ error: err.message, code: err.code });
     }
+    next(err);
+  }
+}
+
+async function getSupervisorPendingRegistrationsSummary(req, res, next) {
+  try {
+    const data = await userService.getSupervisorPendingRegistrationsSummary(req.user.id);
+    return res.json(data);
+  } catch (err) {
     next(err);
   }
 }
@@ -352,9 +400,11 @@ module.exports = {
   logout,
   refresh,
   getMe,
+  getMyActivitySummary,
   registerEmployee,
   listSupervisorsForSignup,
   registerServiceCenter,
+  getHrDashboardStats,
   getUsers,
   getUserById,
   createUser,
@@ -368,8 +418,10 @@ module.exports = {
   getSupervisorsTree,
   getMyEmployees,
   patchMyEmployeeRole,
+  getPendingRegistrationsSummary,
   listPendingRegistrations,
   approvePendingUser,
+  getSupervisorPendingRegistrationsSummary,
   listSupervisorPendingRegistrations,
   approveSupervisorPendingUser,
   listDelegatedVisibility,

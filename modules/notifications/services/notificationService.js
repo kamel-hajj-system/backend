@@ -2,7 +2,7 @@ const { prisma } = require('../../users/models');
 const pushService = require('../../push/services/pushService');
 const userService = require('../../users/services/userService');
 
-async function resolveTargetUsers({ userIds = [], userType, locationId, sendToAll = false }) {
+async function resolveTargetUsers({ userIds = [], userType, locationId, shiftId, sendToAll = false }) {
   const where = {
     isDeleted: false,
     isActive: true,
@@ -10,6 +10,7 @@ async function resolveTargetUsers({ userIds = [], userType, locationId, sendToAl
   };
   if (userType) where.userType = userType;
   if (locationId) where.locationId = locationId;
+  if (shiftId) where.shiftId = shiftId;
   if (Array.isArray(userIds) && userIds.length > 0) where.id = { in: userIds };
   if (!sendToAll && (!Array.isArray(userIds) || userIds.length === 0)) return [];
 
@@ -77,8 +78,8 @@ async function sendNotificationToUserIds({ createdById, title, message, userIds 
   return { notificationId: notification.id, sent: targets.length };
 }
 
-async function sendNotification({ createdById, title, message, userIds, userType, locationId, sendToAll }) {
-  const targets = await resolveTargetUsers({ userIds, userType, locationId, sendToAll });
+async function sendNotification({ createdById, title, message, userIds, userType, locationId, shiftId, sendToAll }) {
+  const targets = await resolveTargetUsers({ userIds, userType, locationId, shiftId, sendToAll });
   if (targets.length === 0) return { notificationId: null, sent: 0 };
   return sendNotificationToUserIds({ createdById, title, message, userIds: targets });
 }

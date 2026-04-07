@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { Pool } = require('pg');
@@ -76,6 +77,9 @@ app.use((req, res, next) => {
     app.set('trust proxy', hops);
   }
 })();
+
+/** Gzip JSON and other compressible responses (smaller payloads over the wire). */
+app.use(compression());
 
 // Security: restrict CORS in production by allowlist
 const corsOrigins = (process.env.CORS_ORIGINS || '')

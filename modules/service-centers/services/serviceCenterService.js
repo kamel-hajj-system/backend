@@ -1,4 +1,5 @@
 const { prisma } = require('../../users/models');
+const { normEntityName, normServiceCenterCode } = require('../../nusuk/nusukColumnMap');
 
 const USER_LIST_SELECT = {
   id: true,
@@ -272,6 +273,19 @@ async function listUsersForCenter(serviceCenterId) {
   });
 }
 
+/**
+ * Pilgrims counted as "actually arrived" from one Nusuk sheet row (shared by reception overviews).
+ */
+function actualArrivalContributionFromNusukRow(row) {
+  const st = row.actualArrivalStatus;
+  const pc = row.pilgrimsCount != null && Number.isFinite(Number(row.pilgrimsCount)) ? Number(row.pilgrimsCount) : 0;
+  const acRaw = row.actualArrivalCount;
+  const ac = acRaw != null && Number.isFinite(Number(acRaw)) ? Number(acRaw) : null;
+  if (st === 'yes') return ac != null ? ac : pc;
+  if (st === 'partial') return ac != null ? ac : 0;
+  return 0;
+}
+
 /** Reception dashboard: all centers with allocation / arrival aggregates (read-only). */
 async function listForReceptionOverview() {
   const centers = await prisma.serviceCenter.findMany({
@@ -285,16 +299,71 @@ async function listForReceptionOverview() {
       },
     },
   });
+  const nusukRows = await prisma.nusukSheetRow.findMany({
+    select: {
+      entityName: true,
+      pilgrimsCount: true,
+      actualArrivalStatus: true,
+      actualArrivalCount: true,
+      rowData: true,
+    },
+  });
+  const companiesForLookup = await prisma.pilgrimCompany.findMany({
+    select: { id: true, name: true },
+  });
+  const companyIdByName = new Map();
+  for (const co of companiesForLookup) {
+    const key = normEntityName(co.name);
+    if (key && !companyIdByName.has(key)) companyIdByName.set(key, co.id);
+  }
+
+  /**
+   * Nusuk rows are global; each row carries `rowData.serviceCenterCode` (رقم مركز الخدمة).
+   * Reception totals per center must only sum rows for that center's code — same rule as the
+   * service center portal (`listRowsForServiceCenter`). Otherwise one center's edits appear
+   * under every center that shares an allocated company (wrong cross-center attribution).
+   */
+  const byCenterCodeAndCompany = new Map();
+  const byCenterCodeOnly = new Map();
+  for (const row of nusukRows) {
+    const nameKey = normEntityName(row.entityName);
+    const companyId = nameKey ? companyIdByName.get(nameKey) : null;
+    if (!companyId) continue;
+    const rd = row.rowData && typeof row.rowData === 'object' ? row.rowData : {};
+    const rowSc = normServiceCenterCode(rd.serviceCenterCode);
+    if (!rowSc) continue;
+
+    const p =
+      row.pilgrimsCount != null && Number.isFinite(Number(row.pilgrimsCount))
+        ? Number(row.pilgrimsCount)
+        : 0;
+    const a = actualArrivalContributionFromNusukRow(row);
+
+    const pairKey = `${rowSc}|${companyId}`;
+    if (!byCenterCodeAndCompany.has(pairKey)) byCenterCodeAndCompany.set(pairKey, { pilgrims: 0, actual: 0 });
+    const pair = byCenterCodeAndCompany.get(pairKey);
+    pair.pilgrims += p;
+    pair.actual += a;
+
+    if (!byCenterCodeOnly.has(rowSc)) byCenterCodeOnly.set(rowSc, { pilgrims: 0, actual: 0 });
+    const tot = byCenterCodeOnly.get(rowSc);
+    tot.pilgrims += p;
+    tot.actual += a;
+  }
 
   return centers.map((c) => {
+    const cNorm = normServiceCenterCode(c.code);
+    const centerSums = byCenterCodeOnly.get(cNorm) ?? { pilgrims: 0, actual: 0 };
     let totalAllocated = 0;
-    let totalIntegrated = 0;
     for (const l of c.pilgrimCompanyAllocations || []) {
       totalAllocated += l.allocatedPilgrims ?? 0;
-      totalIntegrated += l.pilgrimCompany?.mergedActualPilgrimsCount ?? 0;
     }
+    const totalIntegrated = centerSums.pilgrims;
+    const totalActualArrival = centerSums.actual;
     const integratedPercent =
       totalAllocated > 0 ? Math.min(100, Math.round((totalIntegrated / totalAllocated) * 100)) : 0;
+    const actualArrivalPercent =
+      totalAllocated > 0 ? Math.min(100, Math.round((totalActualArrival / totalAllocated) * 100)) : 0;
     return {
       id: c.id,
       code: c.code,
@@ -304,14 +373,25 @@ async function listForReceptionOverview() {
       totalAllocated,
       totalIntegrated,
       integratedPercent,
-      companies: (c.pilgrimCompanyAllocations || []).map((l) => ({
-        id: l.pilgrimCompany?.id,
-        externalCode: l.pilgrimCompany?.externalCode,
-        name: l.pilgrimCompany?.name,
-        nameAr: l.pilgrimCompany?.nameAr,
-        allocatedPilgrims: l.allocatedPilgrims ?? 0,
-        mergedActualPilgrimsCount: l.pilgrimCompany?.mergedActualPilgrimsCount ?? 0,
-      })),
+      totalActualArrival,
+      actualArrivalPercent,
+      companies: (c.pilgrimCompanyAllocations || []).map((l) => {
+        const pid = l.pilgrimCompany?.id;
+        const pairKey = pid ? `${cNorm}|${pid}` : null;
+        const sums = pairKey ? byCenterCodeAndCompany.get(pairKey) : null;
+        const merged = sums?.pilgrims ?? 0;
+        const act = sums?.actual ?? 0;
+        return {
+          id: l.pilgrimCompany?.id,
+          externalCode: l.pilgrimCompany?.externalCode,
+          name: l.pilgrimCompany?.name,
+          nameAr: l.pilgrimCompany?.nameAr,
+          allocatedPilgrims: l.allocatedPilgrims ?? 0,
+          mergedActualPilgrimsCount: merged,
+          nusukEntered: merged,
+          actualArrival: act,
+        };
+      }),
     };
   });
 }
@@ -333,16 +413,47 @@ async function listForReceptionPilgrimCompaniesOverview() {
       },
     },
   });
+  const nusukRows = await prisma.nusukSheetRow.findMany({
+    select: {
+      entityName: true,
+      pilgrimsCount: true,
+      actualArrivalStatus: true,
+      actualArrivalCount: true,
+    },
+  });
+
+  // Aggregate Nusuk counts by company name (same normalization used in Nusuk module).
+  const byCompanyName = new Map();
+  const actualArrivalByNameKey = new Map();
+  for (const row of nusukRows) {
+    const key = normEntityName(row.entityName);
+    if (!key) continue;
+    if (!byCompanyName.has(key)) byCompanyName.set(key, { sum: 0, rowCount: 0 });
+    const agg = byCompanyName.get(key);
+    agg.rowCount += 1;
+    if (row.pilgrimsCount != null && Number.isFinite(Number(row.pilgrimsCount))) {
+      agg.sum += Number(row.pilgrimsCount);
+    }
+    if (!actualArrivalByNameKey.has(key)) actualArrivalByNameKey.set(key, 0);
+    actualArrivalByNameKey.set(key, actualArrivalByNameKey.get(key) + actualArrivalContributionFromNusukRow(row));
+  }
 
   return companies.map((c) => {
     const allocatedAcrossCenters = (c.serviceCenterLinks || []).reduce(
       (s, l) => s + (l.allocatedPilgrims ?? 0),
       0
     );
-    const matched = c.mergedActualPilgrimsCount ?? 0;
+    const nameKey = normEntityName(c.name);
+    const nusukAgg = nameKey ? byCompanyName.get(nameKey) : null;
+    const matched = nusukAgg?.sum ?? 0;
     const matchedPercent =
       c.expectedPilgrimsCount > 0
         ? Math.min(100, Math.round((matched / c.expectedPilgrimsCount) * 100))
+        : 0;
+    const actualArrival = nameKey ? (actualArrivalByNameKey.get(nameKey) ?? 0) : 0;
+    const actualArrivalPercent =
+      c.expectedPilgrimsCount > 0
+        ? Math.min(100, Math.round((actualArrival / c.expectedPilgrimsCount) * 100))
         : 0;
 
     return {
@@ -351,9 +462,13 @@ async function listForReceptionPilgrimCompaniesOverview() {
       name: c.name,
       nameAr: c.nameAr,
       expectedPilgrimsCount: c.expectedPilgrimsCount,
-      mergedActualPilgrimsCount: c.mergedActualPilgrimsCount,
+      mergedActualPilgrimsCount: matched,
+      nusukEntered: matched,
+      nusukRowCount: nusukAgg?.rowCount ?? 0,
       allocatedAcrossCenters,
       matchedPercent,
+      actualArrival,
+      actualArrivalPercent,
       centers: (c.serviceCenterLinks || []).map((l) => ({
         id: l.serviceCenter?.id,
         code: l.serviceCenter?.code,
@@ -372,6 +487,105 @@ async function listForReceptionPilgrimCompaniesOverview() {
   });
 }
 
+/** Reception dashboard: all nationalities with Nusuk-input aggregates (read-only). */
+async function listForReceptionNationalitiesOverview() {
+  const [nationalities, nusukRows] = await Promise.all([
+    prisma.pilgrimNationality.findMany({
+      orderBy: [{ name: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        companyLinks: {
+          include: {
+            pilgrimCompany: {
+              include: {
+                serviceCenterLinks: {
+                  include: { serviceCenter: { select: { id: true, code: true, name: true, nameAr: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.nusukSheetRow.findMany({
+      select: {
+        entityName: true,
+        pilgrimsCount: true,
+        actualArrivalStatus: true,
+        actualArrivalCount: true,
+      },
+    }),
+  ]);
+
+  const companyRows = await prisma.pilgrimCompany.findMany({ select: { id: true, name: true } });
+  const companyIdByName = new Map();
+  for (const c of companyRows) {
+    const key = normEntityName(c.name);
+    if (key && !companyIdByName.has(key)) companyIdByName.set(key, c.id);
+  }
+
+  const nusukByCompanyId = new Map();
+  const actualArrivalByCompanyId = new Map();
+  for (const row of nusukRows) {
+    const nameKey = normEntityName(row.entityName);
+    const companyId = nameKey ? companyIdByName.get(nameKey) : null;
+    if (!companyId) continue;
+    if (!nusukByCompanyId.has(companyId)) nusukByCompanyId.set(companyId, 0);
+    if (row.pilgrimsCount != null && Number.isFinite(Number(row.pilgrimsCount))) {
+      nusukByCompanyId.set(companyId, nusukByCompanyId.get(companyId) + Number(row.pilgrimsCount));
+    }
+    if (!actualArrivalByCompanyId.has(companyId)) actualArrivalByCompanyId.set(companyId, 0);
+    actualArrivalByCompanyId.set(
+      companyId,
+      actualArrivalByCompanyId.get(companyId) + actualArrivalContributionFromNusukRow(row)
+    );
+  }
+
+  return nationalities.map((n) => {
+    const companies = (n.companyLinks || [])
+      .map((l) => l.pilgrimCompany)
+      .filter(Boolean);
+    const uniqueCompanies = new Map(companies.map((c) => [c.id, c]));
+    const companyList = Array.from(uniqueCompanies.values());
+    const expectedPilgrims = companyList.reduce((s, c) => s + (c.expectedPilgrimsCount || 0), 0);
+    const nusukInput = companyList.reduce((s, c) => s + (nusukByCompanyId.get(c.id) || 0), 0);
+    const inputPercent = expectedPilgrims > 0 ? Math.min(100, Math.round((nusukInput / expectedPilgrims) * 100)) : 0;
+    const actualArrival = companyList.reduce((s, c) => s + (actualArrivalByCompanyId.get(c.id) || 0), 0);
+    const actualArrivalPercent =
+      expectedPilgrims > 0 ? Math.min(100, Math.round((actualArrival / expectedPilgrims) * 100)) : 0;
+    const centersMap = new Map();
+    companyList.forEach((c) => {
+      (c.serviceCenterLinks || []).forEach((link) => {
+        const sc = link.serviceCenter;
+        if (sc?.id && !centersMap.has(sc.id)) centersMap.set(sc.id, sc);
+      });
+    });
+
+    return {
+      id: n.id,
+      code: n.code,
+      flagCode: n.flagCode,
+      name: n.name,
+      nameAr: n.nameAr,
+      companiesCount: companyList.length,
+      expectedPilgrims,
+      nusukInput,
+      inputPercent,
+      actualArrival,
+      actualArrivalPercent,
+      companies: companyList.map((c) => ({
+        id: c.id,
+        externalCode: c.externalCode,
+        name: c.name,
+        nameAr: c.nameAr,
+        expectedPilgrimsCount: c.expectedPilgrimsCount || 0,
+        nusukInput: nusukByCompanyId.get(c.id) || 0,
+        actualArrival: actualArrivalByCompanyId.get(c.id) || 0,
+      })),
+      centers: Array.from(centersMap.values()),
+    };
+  });
+}
+
 module.exports = {
   listPublicCatalog,
   list,
@@ -382,4 +596,5 @@ module.exports = {
   listUsersForCenter,
   listForReceptionOverview,
   listForReceptionPilgrimCompaniesOverview,
+  listForReceptionNationalitiesOverview,
 };

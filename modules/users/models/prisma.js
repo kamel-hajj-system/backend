@@ -26,13 +26,26 @@ function makeClient() {
   });
 }
 
-function clientHasScheduledNotifications(client) {
-  return client && typeof client.scheduledNotification === 'object' && client.scheduledNotification !== null;
+/** Stale singletons miss new models after schema changes until generate + restart. */
+function clientHasExpectedDelegates(client) {
+  return (
+    client &&
+    typeof client.scheduledNotification === 'object' &&
+    client.scheduledNotification !== null &&
+    typeof client.nusukSheetRow === 'object' &&
+    client.nusukSheetRow !== null &&
+    typeof client.nusukSettings === 'object' &&
+    client.nusukSettings !== null &&
+    typeof client.nusukSyncSnapshot === 'object' &&
+    client.nusukSyncSnapshot !== null &&
+    typeof client.serviceCenterPreArrivalSettings === 'object' &&
+    client.serviceCenterPreArrivalSettings !== null
+  );
 }
 
 let prisma = globalForPrisma.prisma ?? makeClient();
 
-if (!clientHasScheduledNotifications(prisma)) {
+if (!clientHasExpectedDelegates(prisma)) {
   if (globalForPrisma.prisma) {
     globalForPrisma.prisma.$disconnect().catch(() => {});
     globalForPrisma.prisma = undefined;
@@ -45,9 +58,9 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
-if (!clientHasScheduledNotifications(prisma)) {
+if (!clientHasExpectedDelegates(prisma)) {
   throw new Error(
-    'Prisma client is missing ScheduledNotification. In the backend folder run: npx prisma generate && npx prisma db push (if needed), then restart the Node server so @prisma/client reloads.'
+    'Prisma client is out of date (missing models). In the backend folder run: npx prisma generate && npx prisma migrate deploy (or db push), then restart the Node server.'
   );
 }
 

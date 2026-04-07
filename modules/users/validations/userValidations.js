@@ -162,6 +162,7 @@ const getUsersQuery = [
   query('userType').optional().isIn(userTypeValues),
   query('q').optional().isString().trim().isLength({ max: 100 }),
   query('locationId').optional().isUUID().withMessage('locationId must be a valid UUID'),
+  query('shiftId').optional().isUUID().withMessage('shiftId must be a valid UUID'),
 ];
 
 const bulkAssignSupervisor = [
@@ -231,6 +232,10 @@ const setDelegatedVisibility = [
   body('visibleUserIds.*').isUUID().withMessage('Each visibleUserId must be a valid UUID'),
 ];
 
+const activitySummaryDaysQuery = [
+  query('days').optional().isInt({ min: 7, max: 30 }).withMessage('days must be 7–30').toInt(),
+];
+
 module.exports = {
   handleValidationErrors,
   createUser,
@@ -252,4 +257,5 @@ module.exports = {
   getSignupSupervisorsQuery,
   viewerIdParam,
   setDelegatedVisibility,
+  activitySummaryDaysQuery,
 };

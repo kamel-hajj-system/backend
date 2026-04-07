@@ -331,6 +331,82 @@ function riyadhDayStart(dateStr) {
   return dt.startOf('day');
 }
 
+/** Calendar day in Riyadh for a shift instant (for matching approved online date ranges). */
+function dateKeyRiyadhShift(shiftStartAt) {
+  return DateTime.fromJSDate(shiftStartAt, { zone: SAUDI_ZONE }).toFormat('yyyy-MM-dd');
+}
+
+/** Calendar day for a Prisma/PG DATE field (UTC date). */
+function dateKeyUtcDate(d) {
+  if (!d) return null;
+  return DateTime.fromJSDate(d, { zone: 'utc' }).toFormat('yyyy-MM-dd');
+}
+
+/**
+ * Approved work-location (online) + absence requests: two DB round-trips in parallel, then one pass over rows.
+ */
+async function attachAttendanceRequestFlags(rows) {
+  if (!rows.length) return rows;
+  const userIds = [...new Set(rows.map((r) => r.user.id))];
+  const [approvedOnline, approvedAbsence] = await Promise.all([
+    prisma.attendanceRequest.findMany({
+      where: {
+        requesterId: { in: userIds },
+        kind: 'WORK_LOCATION',
+        status: 'APPROVED',
+        workLocationMode: 'ONLINE',
+      },
+      select: {
+        requesterId: true,
+        effectiveFrom: true,
+        effectiveTo: true,
+      },
+    }),
+    prisma.attendanceRequest.findMany({
+      where: {
+        requesterId: { in: userIds },
+        kind: 'ABSENCE',
+        status: 'APPROVED',
+      },
+      select: {
+        requesterId: true,
+        absenceStartDate: true,
+        absenceEndDate: true,
+      },
+    }),
+  ]);
+
+  const onlineByUser = new Map();
+  for (const req of approvedOnline) {
+    if (!onlineByUser.has(req.requesterId)) onlineByUser.set(req.requesterId, []);
+    onlineByUser.get(req.requesterId).push(req);
+  }
+  const absenceByUser = new Map();
+  for (const req of approvedAbsence) {
+    if (!absenceByUser.has(req.requesterId)) absenceByUser.set(req.requesterId, []);
+    absenceByUser.get(req.requesterId).push(req);
+  }
+
+  return rows.map((row) => {
+    const shiftDay = dateKeyRiyadhShift(row.shiftStartAt);
+    const onlineReqs = onlineByUser.get(row.user.id) || [];
+    const workingOnline = onlineReqs.some((req) => {
+      const from = dateKeyUtcDate(req.effectiveFrom);
+      const to = req.effectiveTo ? dateKeyUtcDate(req.effectiveTo) : from;
+      if (!from || !to) return false;
+      return shiftDay >= from && shiftDay <= to;
+    });
+    const absenceReqs = absenceByUser.get(row.user.id) || [];
+    const onApprovedAbsence = absenceReqs.some((req) => {
+      const from = dateKeyUtcDate(req.absenceStartDate);
+      const to = dateKeyUtcDate(req.absenceEndDate);
+      if (!from || !to) return false;
+      return shiftDay >= from && shiftDay <= to;
+    });
+    return { ...row, workingOnline, onApprovedAbsence };
+  });
+}
+
 async function listHrAttendance(options = {}) {
   const {
     page = 1,
@@ -438,7 +514,79 @@ async function listHrAttendance(options = {}) {
     prisma.attendanceRecord.count({ where }),
   ]);
 
-  return { data: rows, total, page, limit };
+  const data = await attachAttendanceRequestFlags(rows);
+  return { data, total, page, limit };
+}
+
+/**
+ * Last `days` calendar days in Asia/Riyadh: per-day counts for stacked bar (complete / in only / no check-in).
+ */
+async function getMyAttendanceDaySeries(userId, days = 14) {
+  const d = Math.min(Math.max(Number(days) || 14, 7), 30);
+  const end = DateTime.now().setZone(SAUDI_ZONE).startOf('day');
+  const start = end.minus({ days: d - 1 });
+
+  const rows = await prisma.attendanceRecord.findMany({
+    where: {
+      userId,
+      shiftStartAt: {
+        gte: start.toJSDate(),
+        lt: end.plus({ days: 1 }).toJSDate(),
+      },
+    },
+    select: {
+      shiftStartAt: true,
+      checkInAt: true,
+      checkOutAt: true,
+    },
+    orderBy: { shiftStartAt: 'asc' },
+  });
+
+  const byDay = new Map();
+  for (const r of rows) {
+    const key = dateKeyRiyadhShift(r.shiftStartAt);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(r);
+  }
+
+  const labels = [];
+  const complete = [];
+  const checkInOnly = [];
+  const noCheckIn = [];
+
+  for (let i = 0; i < d; i += 1) {
+    const day = start.plus({ days: i });
+    const key = day.toFormat('yyyy-MM-dd');
+    const shortLabel = day.toFormat('MM/dd');
+    labels.push(shortLabel);
+    const list = byDay.get(key) || [];
+    if (list.length === 0) {
+      complete.push(0);
+      checkInOnly.push(0);
+      noCheckIn.push(1);
+      continue;
+    }
+    let c = 0;
+    let o = 0;
+    let n = 0;
+    for (const rec of list) {
+      if (rec.checkInAt && rec.checkOutAt) c += 1;
+      else if (rec.checkInAt) o += 1;
+      else n += 1;
+    }
+    complete.push(c);
+    checkInOnly.push(o);
+    noCheckIn.push(n);
+  }
+
+  return {
+    days: d,
+    zone: SAUDI_ZONE,
+    labels,
+    complete,
+    checkInOnly,
+    noCheckIn,
+  };
 }
 
 module.exports = {
@@ -447,5 +595,6 @@ module.exports = {
   checkIn,
   checkOut,
   listHrAttendance,
+  getMyAttendanceDaySeries,
 };
 

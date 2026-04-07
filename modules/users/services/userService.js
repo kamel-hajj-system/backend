@@ -27,11 +27,12 @@ const USER_SELECT = {
 };
 
 async function getUsers(options = {}) {
-  const { page = 1, limit = 50, isActive, role, locationId, userType, excludeSuperAdmin, q } = options;
+  const { page = 1, limit = 50, isActive, role, locationId, shiftId, userType, excludeSuperAdmin, q } = options;
   const where = { isDeleted: false };
   if (isActive !== undefined) where.isActive = isActive;
   if (role) where.role = role;
   if (locationId) where.locationId = locationId;
+  if (shiftId) where.shiftId = shiftId;
   if (userType) where.userType = userType;
   if (excludeSuperAdmin) where.isSuperAdmin = false;
   if (q && String(q).trim() !== '') {
@@ -440,6 +441,57 @@ async function registerServiceCenter(data) {
 }
 
 /**
+ * Counts for HR pending-approvals dashboard: pending sign-ups vs active (approved) accounts, scoped like the list.
+ */
+async function getPendingRegistrationsSummary(hrUser) {
+  const pendingBase = { isDeleted: false, isActive: false, isSuperAdmin: false };
+  const activeBase = { isDeleted: false, isActive: true, isSuperAdmin: false };
+
+  if (hrUser.userType === 'Company') {
+    const [pendingCompany, pendingServiceCenter, activeCompany, activeServiceCenter] = await prisma.$transaction([
+      prisma.user.count({ where: { ...pendingBase, userType: 'Company' } }),
+      prisma.user.count({ where: { ...pendingBase, userType: 'ServiceCenter' } }),
+      prisma.user.count({ where: { ...activeBase, userType: 'Company' } }),
+      prisma.user.count({ where: { ...activeBase, userType: 'ServiceCenter' } }),
+    ]);
+    return {
+      pendingCompany,
+      pendingServiceCenter,
+      activeCompany,
+      activeServiceCenter,
+      acceptedTotal: activeCompany + activeServiceCenter,
+    };
+  }
+
+  if (hrUser.userType === 'ServiceCenter' && hrUser.serviceCenterId) {
+    const scId = hrUser.serviceCenterId;
+    const [pendingServiceCenter, activeServiceCenter] = await prisma.$transaction([
+      prisma.user.count({
+        where: { ...pendingBase, userType: 'ServiceCenter', serviceCenterId: scId },
+      }),
+      prisma.user.count({
+        where: { ...activeBase, userType: 'ServiceCenter', serviceCenterId: scId },
+      }),
+    ]);
+    return {
+      pendingCompany: 0,
+      pendingServiceCenter,
+      activeCompany: 0,
+      activeServiceCenter,
+      acceptedTotal: activeServiceCenter,
+    };
+  }
+
+  return {
+    pendingCompany: 0,
+    pendingServiceCenter: 0,
+    activeCompany: 0,
+    activeServiceCenter: 0,
+    acceptedTotal: 0,
+  };
+}
+
+/**
  * Pending self-service registrations for HR (Company → all Company pending; ServiceCenter → same center only).
  */
 async function listPendingRegistrations(hrUser) {
@@ -513,6 +565,27 @@ async function approvePendingUser(actor, targetId, role) {
   });
   await applyDefaultAccessGrantsForApprovedUser(targetId, target.userType);
   return getUserById(targetId);
+}
+
+/**
+ * Supervisor dashboard: pending sign-ups vs active direct reports (same scope as the pending list).
+ */
+async function getSupervisorPendingRegistrationsSummary(supervisorId) {
+  const baseTeam = {
+    isDeleted: false,
+    isSuperAdmin: false,
+    userType: 'Company',
+    supervisorId,
+  };
+  const [pendingTeam, activeTeam] = await prisma.$transaction([
+    prisma.user.count({ where: { ...baseTeam, isActive: false } }),
+    prisma.user.count({ where: { ...baseTeam, isActive: true } }),
+  ]);
+  return {
+    pendingTeam,
+    activeTeam,
+    teamTotal: pendingTeam + activeTeam,
+  };
 }
 
 /**
@@ -708,6 +781,59 @@ async function setDelegatedVisibilityForViewer(viewerId, visibleUserIdsRaw) {
   return { viewerId, visibleUserIds, updated: visibleUserIds.length };
 }
 
+/**
+ * HR portal dashboard: aggregate counts (users, work locations, service centers, attendance requests).
+ */
+async function getHrDashboardStats() {
+  const hrUserWhere = { isDeleted: false, isSuperAdmin: false };
+  const requesterCompany = { userType: 'Company', isDeleted: false };
+
+  const [
+    companyUsers,
+    serviceCenterUsers,
+    locationsCount,
+    serviceCentersCount,
+    pendingOnline,
+    pendingAbsence,
+    approvedOnline,
+    approvedAbsence,
+    rejectedRequests,
+  ] = await prisma.$transaction([
+    prisma.user.count({ where: { ...hrUserWhere, userType: 'Company' } }),
+    prisma.user.count({ where: { ...hrUserWhere, userType: 'ServiceCenter' } }),
+    prisma.shift_Location.count({ where: { isActive: true } }),
+    prisma.serviceCenter.count(),
+    prisma.attendanceRequest.count({
+      where: { kind: 'WORK_LOCATION', status: 'PENDING', requester: requesterCompany },
+    }),
+    prisma.attendanceRequest.count({
+      where: { kind: 'ABSENCE', status: 'PENDING', requester: requesterCompany },
+    }),
+    prisma.attendanceRequest.count({
+      where: { kind: 'WORK_LOCATION', status: 'APPROVED', requester: requesterCompany },
+    }),
+    prisma.attendanceRequest.count({
+      where: { kind: 'ABSENCE', status: 'APPROVED', requester: requesterCompany },
+    }),
+    prisma.attendanceRequest.count({
+      where: { status: 'REJECTED', requester: requesterCompany },
+    }),
+  ]);
+
+  return {
+    users: { company: companyUsers, serviceCenter: serviceCenterUsers },
+    locations: locationsCount,
+    serviceCenters: serviceCentersCount,
+    attendanceRequests: {
+      pendingOnline,
+      pendingAbsence,
+      approvedOnline,
+      approvedAbsence,
+      rejected: rejectedRequests,
+    },
+  };
+}
+
 module.exports = {
   getUsers,
   getUserById,
@@ -716,8 +842,10 @@ module.exports = {
   listSupervisorsForEmployeeSignup,
   registerServiceCenter,
   listPendingRegistrations,
+  getPendingRegistrationsSummary,
   approvePendingUser,
   listPendingRegistrationsForSupervisor,
+  getSupervisorPendingRegistrationsSummary,
   approvePendingUserForSupervisor,
   updateUser,
   softDeleteUser,
@@ -733,4 +861,5 @@ module.exports = {
   listDelegatedVisibilityGrouped,
   setDelegatedVisibilityForViewer,
   getCompanyTeamUserIds,
+  getHrDashboardStats,
 };

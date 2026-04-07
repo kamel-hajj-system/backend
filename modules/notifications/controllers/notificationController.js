@@ -73,7 +73,7 @@ function buildSchedulePayload(body, recipientIds) {
 
 async function send(req, res, next) {
   try {
-    const { title, message, userIds, userType, locationId, sendToAll } = req.body || {};
+    const { title, message, userIds, userType, locationId, shiftId, sendToAll } = req.body || {};
     const result = await notificationService.sendNotification({
       createdById: req.user?.id,
       title,
@@ -81,6 +81,7 @@ async function send(req, res, next) {
       userIds: userIds || [],
       userType,
       locationId,
+      shiftId,
       sendToAll: sendToAll === true,
     });
     return res.json(result);

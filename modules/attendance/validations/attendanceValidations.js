@@ -23,8 +23,13 @@ const listHrAttendanceQuery = [
   query('hasCheckOut').optional().isIn(['true', 'false']).toBoolean(),
 ];
 
+const myDashboardChartDaysQuery = [
+  query('days').optional().isInt({ min: 7, max: 30 }).withMessage('days must be 7–30').toInt(),
+];
+
 module.exports = {
   handleValidationErrors,
   listHrAttendanceQuery,
+  myDashboardChartDaysQuery,
 };
 

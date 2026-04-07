@@ -42,6 +42,7 @@ function requireAuth(req, res, next) {
         updatedAt: true,
         shiftLocation: { select: { id: true, name: true, locationAr: true } },
         shift: { select: { id: true, name: true, shiftAr: true } },
+        serviceCenter: { select: { id: true, code: true, name: true, nameAr: true } },
         accessGrants: { select: { code: true } },
         tokenVersion: true,
         _count: { select: { delegatedVisibilityAsViewer: true } },
@@ -98,6 +99,14 @@ function requireHrCanEdit(req, res, next) {
     return next();
   }
   return res.status(403).json({ error: 'HR edit access required' });
+}
+
+/** Logged-in user must be Service Center type with a linked service center row. */
+function requireServiceCenterPortal(req, res, next) {
+  if (req.user?.userType === 'ServiceCenter' && req.user?.serviceCenterId) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Service center portal access required' });
 }
 
 function requireCompanySupervisor(req, res, next) {
@@ -200,5 +209,6 @@ module.exports = {
   requireCompanySupervisorOrAccessCodes,
   requireAccessCode,
   requirePermission,
+  requireServiceCenterPortal,
   optionalAuth,
 };

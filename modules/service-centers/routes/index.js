@@ -35,8 +35,14 @@ router.get(
 router.get(
   '/reception/pilgrim-companies-overview',
   requireAuth,
-  requireAccessCode(['reception.dashboard', 'reception.serviceCenters', 'reception.pilgrimCompanies']),
+  requireAccessCode(['reception.dashboard', 'reception.pilgrimCompanies']),
   controller.listReceptionPilgrimCompaniesOverview
+);
+router.get(
+  '/reception/pilgrim-nationalities-overview',
+  requireAuth,
+  requireAccessCode(['reception.nationalities']),
+  controller.listReceptionNationalitiesOverview
 );
 // Pilgrim nationalities (reference data)
 router.get('/pilgrim-nationalities', requireAuth, requireSuperAdmin, controller.listNationalities);
