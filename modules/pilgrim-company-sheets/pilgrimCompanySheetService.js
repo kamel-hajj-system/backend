@@ -2,6 +2,11 @@ const { parse } = require('csv-parse/sync');
 const { prisma } = require('../users/models');
 const nusukService = require('../nusuk/nusukService');
 const {
+  normalizeGoogleSheetUrl,
+  GOOGLE_SHEET_CSV_FETCH_HEADERS,
+  sheetHtmlResponseHint,
+} = require('../../utils/googleSheetCsvUrl');
+const {
   NUSK_HEADER_TO_KEY,
   mapRawRowToRowData,
   normEntityName,
@@ -35,34 +40,21 @@ function normPreArrivalKey(v) {
   return normalizeDigitsForCompare(s);
 }
 
-/** Accepts edit URL or CSV export URL; returns CSV export URL or null. */
-function normalizeGoogleSheetUrl(input) {
-  const u = String(input).trim();
-  if (!u) return null;
-  if (!/^https:\/\/(docs\.google\.com|drive\.google\.com)\//i.test(u)) {
-    return null;
-  }
-  if (u.includes('/export?') && /format=csv/i.test(u)) {
-    return u.split('#')[0];
-  }
-  const m = u.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (!m) return null;
-  const sheetId = m[1];
-  let gid = '0';
-  const gidMatch = u.match(/[#&?]gid=(\d+)/);
-  if (gidMatch) gid = gidMatch[1];
-  return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-}
-
 async function fetchCsvRows(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: GOOGLE_SHEET_CSV_FETCH_HEADERS,
+      redirect: 'follow',
+    });
     const text = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (/<!doctype html/i.test(text) || (/<html/i.test(text) && text.length > 500)) {
-      throw new Error('URL did not return CSV (publish or share the sheet, check gid)');
+      throw new Error(
+        `URL did not return CSV (share sheet as "Anyone with the link" Viewer; check gid)${sheetHtmlResponseHint(text)}`
+      );
     }
     return parse(text, { columns: true, skip_empty_lines: true, bom: true, relax_column_count: true });
   } finally {

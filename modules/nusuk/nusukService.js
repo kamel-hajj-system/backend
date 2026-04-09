@@ -1,6 +1,11 @@
 const crypto = require('crypto');
 const { parse } = require('csv-parse/sync');
 const { prisma } = require('../users/models');
+const {
+  resolveSheetCsvFetchUrl,
+  GOOGLE_SHEET_CSV_FETCH_HEADERS,
+  sheetHtmlResponseHint,
+} = require('../../utils/googleSheetCsvUrl');
 const { getTableColumnsConfig: getServiceCenterPreArrivalTableColumnsConfig } = require('../service-center-pre-arrival/serviceCenterPreArrivalService');
 const {
   NUSK_HEADER_TO_KEY,
@@ -120,11 +125,17 @@ async function fetchCsvRows(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: GOOGLE_SHEET_CSV_FETCH_HEADERS,
+      redirect: 'follow',
+    });
     const text = await res.text();
     if (!res.ok) throw new Error(`Sheet fetch failed (${res.status})`);
     if (/<!doctype html/i.test(text) || /<html/i.test(text)) {
-      throw new Error('URL did not return CSV (check sharing and gid)');
+      throw new Error(
+        `Google returned HTML instead of CSV. Share the sheet: "Anyone with the link" as Viewer; confirm the tab (gid) matches the sheet you want. If you pasted the editor link, it is converted to CSV export automatically — sharing must still allow anonymous access.${sheetHtmlResponseHint(text)}`
+      );
     }
     return parse(text, { columns: true, skip_empty_lines: true, bom: true, relax_column_count: true });
   } finally {
@@ -143,10 +154,10 @@ async function getOrCreateSettings() {
 /** Sheet URL: optional one-off override (superadmin), else DB only — no env / hardcoded default. */
 async function getResolvedSheetUrl(urlOverride) {
   const o = urlOverride && String(urlOverride).trim();
-  if (o) return o;
+  if (o) return resolveSheetCsvFetchUrl(o);
   const s = await getOrCreateSettings();
   const fromDb = s.sheetCsvUrl?.trim();
-  if (fromDb) return fromDb;
+  if (fromDb) return resolveSheetCsvFetchUrl(fromDb);
   return null;
 }
 
