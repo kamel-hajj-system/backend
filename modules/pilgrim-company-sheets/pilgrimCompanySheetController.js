@@ -7,13 +7,14 @@ const {
   getPilgrimCompanyDataOverview,
   applyFieldFromPilgrimSheetToNusuk,
   applyAllEmptyFieldsFromPilgrimSheetToNusuk,
+  MAX_SHEETS,
 } = require('./pilgrimCompanySheetService');
 const { logNusukRowUpdatedAudit } = require('../nusuk/nusukAuditHelper');
 
 async function list(req, res) {
   try {
     const rows = await listAll();
-    res.json({ data: rows });
+    res.json({ data: rows, maxSheets: MAX_SHEETS });
   } catch (e) {
     res.status(500).json({ message: e.message || 'Failed to list' });
   }

@@ -27,7 +27,14 @@ function fieldValuesMatchForApply(sheetCell, nusukCell) {
 
 const ALLOWED_NUSUK_FIELD_KEYS = new Set(Object.values(NUSK_HEADER_TO_KEY));
 
-const MAX_SHEETS = 10;
+/** Configurable cap (default 100). Was 10 — too low for many partner sheets. Env: PILGRIM_COMPANY_SHEETS_MAX (1–500). */
+const MAX_SHEETS = (() => {
+  const def = 100;
+  const raw = process.env.PILGRIM_COMPANY_SHEETS_MAX;
+  const n = raw !== undefined && String(raw).trim() !== '' ? parseInt(String(raw), 10) : def;
+  if (!Number.isFinite(n)) return def;
+  return Math.min(500, Math.max(1, n));
+})();
 
 /** Cache pilgrim-company CSV parses per sheet source (2–5 min TTL; suggestions endpoint only). */
 const PILGRIM_SHEET_CSV_CACHE_TTL_MS = 4 * 60 * 1000;
