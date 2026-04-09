@@ -17,7 +17,7 @@ const {
   isEmptyLikeCellValue,
   normalizeCellValueForRowCompare,
   val,
-  parsePilgrimsCount,
+  extractPilgrimsCountFromMissionCsvRow,
 } = require('../nusuk/nusukColumnMap');
 
 /** Same equality as buildRowCompare `same` flag (normalized compare). */
@@ -923,7 +923,7 @@ async function getReceptionNusukRowsSummary() {
         const headers = rawRows.length ? Object.keys(rawRows[0]) : [];
         const parsed = parseExternalSheetRows(rawRows);
         for (const r of parsed) {
-          const n = parsePilgrimsCount(r.rowData);
+          const n = extractPilgrimsCountFromMissionCsvRow(r.rowData, r.raw);
           if (n != null) totalMissionPilgrims += n;
           if (!r.preKey) continue;
           missionRowsWithPreKey += 1;
@@ -940,10 +940,14 @@ async function getReceptionNusukRowsSummary() {
     }),
   );
 
-  const pilgrimMatchPercent =
-    totalMissionPilgrims > 0
-      ? Math.min(100, Math.round((totalNusukPilgrims / totalMissionPilgrims) * 100))
-      : 0;
+  /** Symmetric alignment of two totals (Nusuk DB vs mission Google Sheets), not vs pilgrim_companies.expected. */
+  const pilgrimMatchPercent = (() => {
+    const a = Math.max(0, Number(totalNusukPilgrims) || 0);
+    const b = Math.max(0, Number(totalMissionPilgrims) || 0);
+    if (a <= 0 && b <= 0) return 0;
+    if (a <= 0 || b <= 0) return 0;
+    return Math.min(100, Math.round((100 * Math.min(a, b)) / Math.max(a, b)));
+  })();
 
   const preArrivalFlightMatchPercent =
     missionRowsWithPreKey > 0

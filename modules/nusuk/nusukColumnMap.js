@@ -190,6 +190,41 @@ function parsePilgrimsCount(rowData) {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 }
 
+/**
+ * Mission Google Sheet row: use mapped `rowData.pilgrimsCount` first, then any column header
+ * that maps to `pilgrimsCount`, then fuzzy «عدد الحجاج» headers when the canonical Arabic title
+ * differs slightly (common in partner sheets).
+ * @param {Record<string, unknown>} rowData
+ * @param {Record<string, unknown>} raw
+ * @returns {number | null}
+ */
+function extractPilgrimsCountFromMissionCsvRow(rowData, raw) {
+  const fromMapped = parsePilgrimsCount(rowData);
+  if (fromMapped != null) return fromMapped;
+  if (!raw || typeof raw !== 'object') return null;
+  for (const [header, cell] of Object.entries(raw)) {
+    if (getRowDataKeyForSheetHeader(header) === 'pilgrimsCount') {
+      const n = parsePilgrimsCount({ pilgrimsCount: cell });
+      if (n != null) return n;
+    }
+  }
+  for (const [header, cell] of Object.entries(raw)) {
+    if (!headerLooksLikePilgrimsCountColumn(header)) continue;
+    const n = parsePilgrimsCount({ pilgrimsCount: cell });
+    if (n != null) return n;
+  }
+  return null;
+}
+
+/** True when the CSV column title is clearly «عدد الحجاج» (or close variant), not generic «العدد». */
+function headerLooksLikePilgrimsCountColumn(header) {
+  const nk = normalizeHeader(header);
+  if (!nk) return false;
+  const hasCount = /عدد/.test(nk);
+  const hasPilgrim = /حجاج|حجّاج|الحجاج/i.test(nk);
+  return hasCount && hasPilgrim;
+}
+
 function normEntityName(s) {
   return val(s).replace(/\s+/g, ' ').trim();
 }
@@ -225,6 +260,7 @@ module.exports = {
   mapRawRowToRowData,
   isMeaningfulRow,
   parsePilgrimsCount,
+  extractPilgrimsCountFromMissionCsvRow,
   normEntityName,
   normServiceCenterCode,
   normalizeDigitsForCompare,
