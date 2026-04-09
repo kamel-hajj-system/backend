@@ -63,6 +63,7 @@ model Shift_Location {
   users  User[]
   shifts Shift[]
   busMovementReports BusMovementReport[]
+  dailyCompanyReports DailyCompanyReport[]
 
   @@map("shift_locations")
 }
@@ -313,6 +314,7 @@ model User {
   busMovementReportsCreated           BusMovementReport[] @relation("BusMovementReportCreator")
   busMovementReportsAirportApproved   BusMovementReport[] @relation("BusMovementReportAirportSupervisor")
   busMovementReportsAdminCompleted    BusMovementReport[] @relation("BusMovementReportAdminSupervisor")
+  dailyCompanyReportsCreated          DailyCompanyReport[] @relation("DailyCompanyReportCreator")
 
   @@index([email])
   @@index([isDeleted, isActive])
@@ -500,6 +502,35 @@ model BusMovementReport {
   @@index([locationId, status])
   @@index([createdById])
   @@map("bus_movement_reports")
+}
+
+/// Company daily operational report: tasks, updates, ministry instructions, management needs.
+model DailyCompanyReport {
+  id          String   @id @default(uuid()) @db.Uuid
+  locationId  String   @map("location_id") @db.Uuid
+  createdById String   @map("created_by_id") @db.Uuid
+  reportDate  DateTime @map("report_date") @db.Date
+
+  /// JSON array: `{ taskName, status, details? }[]` — status: PENDING | IN_PROGRESS | DONE | BLOCKED
+  tasksJson Json @map("tasks_json")
+
+  updatesToday String @map("updates_today") @db.Text
+
+  ministryInstructionsReceived Boolean @default(false) @map("ministry_instructions_received")
+  ministryInstructionsText     String? @map("ministry_instructions_text") @db.Text
+
+  seniorManagementNeeds String @map("senior_management_needs") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  location  Shift_Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy User           @relation("DailyCompanyReportCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([createdById, reportDate])
+  @@index([locationId, reportDate(sort: Desc)])
+  @@index([createdById])
+  @@map("daily_company_reports")
 }
 
 model Notification {

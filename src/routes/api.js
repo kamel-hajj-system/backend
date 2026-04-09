@@ -14,6 +14,7 @@ const nusukAdminRoutes = require('../../modules/nusuk/nusukAdminRoutes');
 const serviceCenterPreArrivalAdminRoutes = require('../../modules/service-center-pre-arrival/serviceCenterPreArrivalAdminRoutes');
 const pilgrimCompanySheetRoutes = require('../../modules/pilgrim-company-sheets/pilgrimCompanySheetRoutes');
 const busMovementReportRoutes = require('../../modules/bus-movement-reports/routes');
+const dailyCompanyReportRoutes = require('../../modules/daily-company-reports/routes');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -50,5 +51,6 @@ router.use('/', nusukAdminRoutes);
 router.use('/', serviceCenterPreArrivalAdminRoutes);
 router.use('/', pilgrimCompanySheetRoutes);
 router.use('/', busMovementReportRoutes);
+router.use('/', dailyCompanyReportRoutes);
 
 module.exports = router;
