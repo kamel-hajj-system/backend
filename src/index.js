@@ -97,7 +97,9 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+/** Default 32mb — Nusuk sync-save and similar bulk JSON payloads exceed Express's 100kb default. Override with JSON_BODY_LIMIT e.g. "50mb". */
+const jsonBodyLimit = process.env.JSON_BODY_LIMIT || '32mb';
+app.use(express.json({ limit: jsonBodyLimit }));
 app.use(cookieParser());
 
 app.get('/api/health', (req, res) => {
